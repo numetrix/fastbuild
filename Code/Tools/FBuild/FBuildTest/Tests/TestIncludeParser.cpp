@@ -9,7 +9,6 @@
 #include "Tools/FBuild/FBuildCore/Helpers/CIncludeParser.h"
 
 // Core
-#include "Core/Containers/AutoPtr.h"
 #include "Core/FileIO/FileStream.h"
 #include "Core/Strings/AStackString.h"
 #include "Core/Time/Timer.h"
@@ -56,7 +55,7 @@ REGISTER_TESTS_END
 void TestIncludeParser::TestMSVCPreprocessedOutput() const
 {
     FileStream f;
-    TEST_ASSERT( f.Open( "Tools/FBuild/FBuildTest/Data/TestIncludeParser/fbuildcore.msvc.ii", FileStream::READ_ONLY) )
+    TEST_ASSERT( f.Open( "Tools/FBuild/FBuildTest/Data/TestIncludeParser/fbuildcore.msvc.ii", FileStream::READ_ONLY ) )
     const uint32_t fileSize = (uint32_t)f.GetFileSize();
     AString mem;
     mem.SetLength( fileSize );
@@ -77,10 +76,10 @@ void TestIncludeParser::TestMSVCPreprocessedOutput() const
     Timer t;
 
     const size_t repeatCount( 50 );
-    const AString * buffers[2] = { &mem, &mem2 };
+    const AString * buffers[ 2 ] = { &mem, &mem2 };
     for ( const AString * buffer : buffers )
     {
-        for ( size_t i=0; i<repeatCount; ++i )
+        for ( size_t i = 0; i < repeatCount; ++i )
         {
             CIncludeParser parser;
             TEST_ASSERT( parser.ParseMSCL_Preprocessed( buffer->Get(), buffer->GetLength() ) );
@@ -95,7 +94,7 @@ void TestIncludeParser::TestMSVCPreprocessedOutput() const
     }
 
     float time = t.GetElapsed();
-    OUTPUT( "MSVC                 : %2.3fs (%2.1f MiB/sec)\n", (double)time, (double)( (float)( fileSize * repeatCount / ( 1024.0f * 1024.0f ) ) / time ) );
+    OUTPUT( "MSVC                 : %2.3fs (%2.1f MiB/sec)\n", (double)time, (double)( (float)( fileSize * repeatCount ) / ( 1024.0f * 1024.0f ) / time ) );
 }
 
 // TestMSVCPreprocessedOutput_Indent
@@ -127,7 +126,7 @@ void TestIncludeParser::TestMSVCPreprocessedOutput_Indent() const
 void TestIncludeParser::TestMSVCShowIncludesOutput() const
 {
     FileStream f;
-    TEST_ASSERT( f.Open( "Tools/FBuild/FBuildTest/Data/TestIncludeParser/fbuildcore.msvc.showincludes", FileStream::READ_ONLY) )
+    TEST_ASSERT( f.Open( "Tools/FBuild/FBuildTest/Data/TestIncludeParser/fbuildcore.msvc.showincludes", FileStream::READ_ONLY ) )
     const uint32_t fileSize = (uint32_t)f.GetFileSize();
     AString mem;
     mem.SetLength( fileSize );
@@ -148,10 +147,10 @@ void TestIncludeParser::TestMSVCShowIncludesOutput() const
     Timer t;
 
     const size_t repeatCount( 50 );
-    const AString * buffers[2] = { &mem, &mem2 };
+    const AString * buffers[ 2 ] = { &mem, &mem2 };
     for ( const AString * buffer : buffers )
     {
-        for ( size_t i=0; i<repeatCount; ++i )
+        for ( size_t i = 0; i < repeatCount; ++i )
         {
             CIncludeParser parser;
             TEST_ASSERT( parser.ParseMSCL_Output( buffer->Get(), buffer->GetLength() ) );
@@ -166,7 +165,7 @@ void TestIncludeParser::TestMSVCShowIncludesOutput() const
     }
 
     float time = t.GetElapsed();
-    OUTPUT( "MSVC /showincludes   : %2.3fs (%2.1f MiB/sec)\n", (double)time, (double)( (float)( fileSize * repeatCount / ( 1024.0f * 1024.0f ) ) / time ) );
+    OUTPUT( "MSVC /showincludes   : %2.3fs (%2.1f MiB/sec)\n", (double)time, (double)( (float)( fileSize * repeatCount ) / ( 1024.0f * 1024.0f ) / time ) );
 }
 
 // TestMSVC_P
@@ -185,7 +184,7 @@ void TestIncludeParser::TestMSVC_P() const
     EnsureFileDoesNotExist( file );
 
     // Build
-    TEST_ASSERT( fBuild.Build( AStackString<>( "MSVC-P" ) ) );
+    TEST_ASSERT( fBuild.Build( "MSVC-P" ) );
 
     // make sure all output files are as expected
     EnsureFileExists( file );
@@ -206,7 +205,7 @@ void TestIncludeParser::TestMSVC_ShowIncludesWithWarnings() const
     FBuild fb; // needed for CleanPath
 
     FileStream f;
-    TEST_ASSERT( f.Open( "Tools/FBuild/FBuildTest/Data/TestIncludeParser/MSVC-ShowIncludes/WithWarnings.output", FileStream::READ_ONLY) )
+    TEST_ASSERT( f.Open( "Tools/FBuild/FBuildTest/Data/TestIncludeParser/MSVC-ShowIncludes/WithWarnings.output", FileStream::READ_ONLY ) )
     const uint32_t fileSize = (uint32_t)f.GetFileSize();
     AString mem;
     mem.SetLength( fileSize );
@@ -224,7 +223,7 @@ void TestIncludeParser::TestMSVC_ShowIncludesWithWarnings() const
         TEST_ASSERT( mem2.Replace( "\n", "\r\n" ) == numReplaces ); // Ensure we're actually changing the data
     }
 
-    const AString * buffers[2] = { &mem, &mem2 };
+    const AString * buffers[ 2 ] = { &mem, &mem2 };
     for ( const AString * buffer : buffers )
     {
         CIncludeParser parser;
@@ -246,7 +245,7 @@ void TestIncludeParser::TestGCCPreprocessedOutput() const
     FBuild fBuild; // needed fer CleanPath for relative dirs
 
     FileStream f;
-    TEST_ASSERT( f.Open( "Tools/FBuild/FBuildTest/Data/TestIncludeParser/fbuildcore.gcc.ii", FileStream::READ_ONLY) )
+    TEST_ASSERT( f.Open( "Tools/FBuild/FBuildTest/Data/TestIncludeParser/fbuildcore.gcc.ii", FileStream::READ_ONLY ) )
     const uint32_t fileSize = (uint32_t)f.GetFileSize();
     AString mem;
     mem.SetLength( fileSize );
@@ -267,25 +266,25 @@ void TestIncludeParser::TestGCCPreprocessedOutput() const
     Timer t;
 
     const size_t repeatCount( 50 );
-    const AString * buffers[2] = { &mem, &mem2 };
+    const AString * buffers[ 2 ] = { &mem, &mem2 };
     for ( const AString * buffer : buffers )
     {
-        for ( size_t i=0; i<repeatCount; ++i )
+        for ( size_t i = 0; i < repeatCount; ++i )
         {
             CIncludeParser parser;
             TEST_ASSERT( parser.ParseGCC_Preprocessed( buffer->Get(), buffer->GetLength() ) );
 
             // check number of includes found to prevent future regressions
             const Array< AString > & includes = parser.GetIncludes();
-            TEST_ASSERT( includes.GetSize() == 222 );
+            TEST_ASSERT( includes.GetSize() == 221 );
             #ifdef DEBUG
-                TEST_ASSERT( parser.GetNonUniqueCount() == 1029 );
+                TEST_ASSERT( parser.GetNonUniqueCount() == 308 );
             #endif
         }
     }
 
     float time = t.GetElapsed();
-    OUTPUT( "GCC                  : %2.3fs (%2.1f MiB/sec)\n", (double)time, (double)( (float)( fileSize * repeatCount / ( 1024.0f * 1024.0f ) ) / time ) );
+    OUTPUT( "GCC                  : %2.3fs (%2.1f MiB/sec)\n", (double)time, (double)( (float)( fileSize * repeatCount ) / ( 1024.0f * 1024.0f ) / time ) );
 }
 
 // TestClangPreprocessedOutput
@@ -296,7 +295,7 @@ void TestIncludeParser::TestClangPreprocessedOutput() const
 
     // Load the preprocessed test data
     FileStream f;
-    TEST_ASSERT( f.Open( "Tools/FBuild/FBuildTest/Data/TestIncludeParser/fbuildcore.clang.ii", FileStream::READ_ONLY) )
+    TEST_ASSERT( f.Open( "Tools/FBuild/FBuildTest/Data/TestIncludeParser/fbuildcore.clang.ii", FileStream::READ_ONLY ) )
     const uint32_t fileSize = (uint32_t)f.GetFileSize();
     AString mem;
     mem.SetLength( fileSize );
@@ -317,25 +316,25 @@ void TestIncludeParser::TestClangPreprocessedOutput() const
     Timer t;
 
     const size_t repeatCount( 50 );
-    const AString * buffers[2] = { &mem, &mem2 };
+    const AString * buffers[ 2 ] = { &mem, &mem2 };
     for ( const AString * buffer : buffers )
     {
-        for ( size_t i=0; i<repeatCount; ++i )
+        for ( size_t i = 0; i < repeatCount; ++i )
         {
             CIncludeParser parser;
             TEST_ASSERT( parser.ParseGCC_Preprocessed( buffer->Get(), buffer->GetLength() ) );
 
             // check number of includes found to prevent future regressions
             const Array< AString > & includes = parser.GetIncludes();
-            TEST_ASSERT( includes.GetSize() == 280 );
+            TEST_ASSERT( includes.GetSize() == 279 );
             #ifdef DEBUG
-                TEST_ASSERT( parser.GetNonUniqueCount() == 1280 );
+                TEST_ASSERT( parser.GetNonUniqueCount() == 427 );
             #endif
         }
     }
 
     float time = t.GetElapsed();
-    OUTPUT( "Clang                : %2.3fs (%2.1f MiB/sec)\n", (double)time, (double)( (float)( fileSize * repeatCount / ( 1024.0f * 1024.0f ) ) / time ) );
+    OUTPUT( "Clang                : %2.3fs (%2.1f MiB/sec)\n", (double)time, (double)( (float)( fileSize * repeatCount ) / ( 1024.0f * 1024.0f ) / time ) );
 }
 
 // TestClangMSExtensionsPreprocessedOutput
@@ -345,7 +344,7 @@ void TestIncludeParser::TestClangMSExtensionsPreprocessedOutput() const
     FBuild fBuild; // needed fer CleanPath for relative dirs
 
     FileStream f;
-    TEST_ASSERT( f.Open( "Tools/FBuild/FBuildTest/Data/TestIncludeParser/fbuildcore.clang.ms-extensions.ii", FileStream::READ_ONLY) )
+    TEST_ASSERT( f.Open( "Tools/FBuild/FBuildTest/Data/TestIncludeParser/fbuildcore.clang.ms-extensions.ii", FileStream::READ_ONLY ) )
     const uint32_t fileSize = (uint32_t)f.GetFileSize();
     AString mem;
     mem.SetLength( fileSize );
@@ -366,10 +365,10 @@ void TestIncludeParser::TestClangMSExtensionsPreprocessedOutput() const
     Timer t;
 
     const size_t repeatCount( 50 );
-    const AString * buffers[2] = { &mem, &mem2 };
+    const AString * buffers[ 2 ] = { &mem, &mem2 };
     for ( const AString * buffer : buffers )
     {
-        for ( size_t i=0; i<repeatCount; ++i )
+        for ( size_t i = 0; i < repeatCount; ++i )
         {
             CIncludeParser parser;
             TEST_ASSERT( parser.ParseGCC_Preprocessed( buffer->Get(), buffer->GetLength() ) );
@@ -384,7 +383,7 @@ void TestIncludeParser::TestClangMSExtensionsPreprocessedOutput() const
     }
 
     float time = t.GetElapsed();
-    OUTPUT( "Clang (ms-extensions): %2.3fs (%2.1f MiB/sec)\n", (double)time, (double)( (float)( fileSize * repeatCount / ( 1024.0f * 1024.0f ) ) / time ) );
+    OUTPUT( "Clang (ms-extensions): %2.3fs (%2.1f MiB/sec)\n", (double)time, (double)( (float)( fileSize * repeatCount ) / ( 1024.0f * 1024.0f ) / time ) );
 }
 
 //
@@ -449,7 +448,7 @@ void TestIncludeParser::ClangLineEndings() const
     // output when using Clang
     const char* preprocessedData    = "# 1 \"C:\\Test\\EmptyClang\\Unity.cpp\"\n"
                                       "# 1 \"C:\\Test\\EmptyClang\\Unity.cpp\" 2\r\n"   // Note: CR LF
-                                      "# 1 \"./Empty1.cpp\" 1\r\n"                     // Note: CR LF
+                                      "# 1 \"./Empty1.cpp\" 1\r\n"                      // Note: CR LF
                                       "# 1 \"C:\\Test\\EmptyClang\\Unity.cpp\" 2\n"     // Note: LF
                                       "# 1 \"./Empty2.cpp\" 1\n"                        // Note: LF
                                       "# 2 \"C:\\Test\\EmptyClang\\Unity.cpp\" 2\r"     // Note: CR
@@ -463,9 +462,9 @@ void TestIncludeParser::ClangLineEndings() const
 
     // check number of includes found to prevent future regressions
     const Array< AString > & includes = parser.GetIncludes();
-    TEST_ASSERT( includes.GetSize() == 4 );
+    TEST_ASSERT( includes.GetSize() == 3 );
     #ifdef DEBUG
-        TEST_ASSERT( parser.GetNonUniqueCount() == 8 );
+        TEST_ASSERT( parser.GetNonUniqueCount() == 3 );
     #endif
 }
 

@@ -47,8 +47,6 @@ typedef signed int          int32_t;
 #define KILOBYTE (1024)
 #define MEGABYTE (1024 * 1024)
 
-#define UNUSED( x )
-
 #if defined( __WINDOWS__ )
     #define THREAD_LOCAL __declspec( thread )
 #else
@@ -84,7 +82,7 @@ typedef signed int          int32_t;
 #endif
 #ifndef uintptr_t
     #if defined( __LINUX__ )
-        #ifdef __x86_64__
+        #if defined( __X64__ ) || defined( __ARM64__ )
             typedef uint64_t    uintptr_t;
         #else
             typedef uint32_t    uintptr_t;
@@ -101,12 +99,6 @@ typedef signed int          int32_t;
 
 #if defined( __WINDOWS__ ) && defined( __clang__ )
     #define __w64
-#endif
-
-#if !defined( __WINDOWS__ ) || defined( __clang__ )
-    #ifndef nullptr
-        #define nullptr (0)
-    #endif
 #endif
 
 // Versions of Visual Studio prior to 2017 don't manage noexcept properly

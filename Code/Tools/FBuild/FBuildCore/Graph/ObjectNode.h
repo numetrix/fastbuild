@@ -5,20 +5,21 @@
 // Includes
 //------------------------------------------------------------------------------
 #include "FileNode.h"
+
+// Core
 #include "Core/Containers/Array.h"
-#include "Core/Containers/AutoPtr.h"
 #include "Core/Env/Assert.h"
 #include "Core/Process/Process.h"
 
 // Forward Declarations
 //------------------------------------------------------------------------------
 class Args;
-class BFFIterator;
 class ConstMemoryStream;
 class Function;
 class NodeGraph;
 class NodeProxy;
 class ObjectNode;
+enum class ArgsResponseFileMode : uint32_t;
 
 // ObjectNode
 //------------------------------------------------------------------------------
@@ -27,7 +28,7 @@ class ObjectNode : public FileNode
     REFLECT_NODE_DECLARE( ObjectNode )
 public:
     ObjectNode();
-    virtual bool Initialize( NodeGraph & nodeGraph, const BFFIterator & iter, const Function * function ) override;
+    virtual bool Initialize( NodeGraph & nodeGraph, const BFFToken * iter, const Function * function ) override;
     // simplified remote constructor
     explicit ObjectNode( const AString & objectName,
                          NodeProxy * srcFile,
@@ -62,6 +63,8 @@ public:
         FLAG_STATIC_ANALYSIS_MSVC = 0x200000,
         FLAG_ORBIS_WAVE_PSSLC   =   0x400000,
         FLAG_DIAGNOSTICS_COLOR_AUTO = 0x800000,
+        FLAG_WARNINGS_AS_ERRORS_CLANGGCC = 0x1000000,
+        FLAG_CLANG_CL           = 0x2000000,
     };
     static uint32_t DetermineFlags( const CompilerNode * compilerNode,
                                     const AString & args,
@@ -72,8 +75,12 @@ public:
 
     inline bool IsCreatingPCH() const { return GetFlag( FLAG_CREATING_PCH ); }
     inline bool IsUsingPCH() const { return GetFlag( FLAG_USING_PCH ); }
+    inline bool IsClang() const { return GetFlag( FLAG_CLANG ); }
+    inline bool IsGCC() const { return GetFlag( FLAG_GCC ); }
     inline bool IsMSVC() const { return GetFlag( FLAG_MSVC ); }
+    inline bool IsClangCl() const { return GetFlag( FLAG_CLANG_CL ); }
     inline bool IsUsingPDB() const { return GetFlag( FLAG_USING_PDB ); }
+    inline bool IsUsingStaticAnalysisMSVC() const { return GetFlag( FLAG_STATIC_ANALYSIS_MSVC ); }
 
     virtual void SaveRemote( IOStream & stream ) const override;
     static Node * LoadRemote( IOStream & stream );
@@ -87,10 +94,13 @@ public:
     ObjectNode * GetPrecompiledHeader() const;
 
     void GetPDBName( AString & pdbName ) const;
+    void GetNativeAnalysisXMLPath( AString& outXMLFileName ) const;
 
     const char * GetObjExtension() const;
+
+    const AString & GetPCHObjectName() const { return m_PCHObjectFileName; }
+    const AString & GetOwnerObjectList() const { return m_OwnerObjectList; }
 private:
-    virtual bool DoDynamicDependencies( NodeGraph & nodeGraph, bool forceClean ) override;
     virtual BuildResult DoBuild( Job * job ) override;
     virtual BuildResult DoBuild2( Job * job, bool racingRemoteJob ) override;
     virtual bool Finalize( NodeGraph & nodeGraph ) override;
@@ -124,7 +134,7 @@ private:
     static bool StripTokenWithArg_MSVC( const char * tokenToCheckFor, const AString & token, size_t & index );
     static bool StripToken( const char * tokenToCheckFor, const AString & token, bool allowStartsWith = false );
     static bool StripToken_MSVC( const char * tokenToCheckFor, const AString & token, bool allowStartsWith = false );
-    bool BuildArgs( const Job * job, Args & fullArgs, Pass pass, bool useDeoptimization, bool useShowIncludes, bool finalize, const AString & overrideSrcFile = AString::GetEmpty() ) const;
+    bool BuildArgs( const Job * job, Args & fullArgs, Pass pass, bool useDeoptimization, bool useShowIncludes, bool useSourceMapping, bool finalize, const AString & overrideSrcFile = AString::GetEmpty() ) const;
 
     void ExpandCompilerForceUsing( Args & fullArgs, const AString & pre, const AString & post ) const;
     bool BuildPreprocessedOutput( const Args & fullArgs, Job * job, bool useDeoptimization ) const;
@@ -136,12 +146,15 @@ private:
     inline bool GetFlag( uint32_t flag ) const { return ( ( m_Flags & flag ) != 0 ); }
     inline bool GetPreprocessorFlag( uint32_t flag ) const { return ( ( m_PreprocessorFlags & flag ) != 0 ); }
 
-    static void HandleSystemFailures( Job * job, int result, const char * stdOut, const char * stdErr );
+    static void HandleSystemFailures( Job * job, int result, const AString & stdOut, const AString & stdErr );
+    static void HandleWarningsClangCl( Job * job, const AString & name, const AString & data );
     bool ShouldUseDeoptimization() const;
     friend class Client;
     bool ShouldUseCache() const;
-    bool CanUseResponseFile() const;
+    ArgsResponseFileMode GetResponseFileMode() const;
     bool GetVBCCPreprocessedOutput( ConstMemoryStream & outStream ) const;
+
+    void DoClangUnityFixup( Job * job ) const;
 
     friend class FunctionObjectList;
 
@@ -163,19 +176,15 @@ private:
         inline int                      GetResult() const { return m_Result; }
 
         // access output/error
-        inline const AutoPtr< char > &  GetOut() const { return m_Out; }
-        inline uint32_t                 GetOutSize() const { return m_OutSize; }
-        inline const AutoPtr< char > &  GetErr() const { return m_Err; }
-        inline uint32_t                 GetErrSize() const { return m_ErrSize; }
+        inline const AString &          GetOut() const { return m_Out; }
+        inline const AString &          GetErr() const { return m_Err; }
         inline bool                     HasAborted() const { return m_Process.HasAborted(); }
 
     private:
         bool            m_HandleOutput;
         Process         m_Process;
-        AutoPtr< char > m_Out;
-        uint32_t        m_OutSize;
-        AutoPtr< char > m_Err;
-        uint32_t        m_ErrSize;
+        AString         m_Out;
+        AString         m_Err;
         int             m_Result;
     };
 
@@ -202,6 +211,7 @@ private:
     uint32_t            m_PreprocessorFlags                 = 0;
     uint64_t            m_PCHCacheKey                       = 0;
     uint64_t            m_LightCacheKey                     = 0;
+    AString             m_OwnerObjectList; // TODO:C This could be a pointer to the node in the future
 
     // Not serialized
     Array< AString >    m_Includes;

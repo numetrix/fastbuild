@@ -10,7 +10,6 @@
 // Forward Declarations
 //------------------------------------------------------------------------------
 class Args;
-class BFFIterator;
 class CompilerNode;
 class Function;
 class NodeGraph;
@@ -23,7 +22,7 @@ class ObjectListNode : public Node
     REFLECT_NODE_DECLARE( ObjectListNode )
 public:
     ObjectListNode();
-    virtual bool Initialize( NodeGraph & nodeGraph, const BFFIterator & iter, const Function * function ) override;
+    virtual bool Initialize( NodeGraph & nodeGraph, const BFFToken * iter, const Function * function ) override;
     virtual ~ObjectListNode() override;
 
     static inline Node::Type GetTypeS() { return Node::OBJECT_LIST_NODE; }
@@ -53,7 +52,7 @@ protected:
     // internal helpers
     bool CreateDynamicObjectNode( NodeGraph & nodeGraph, Node * inputFile, const AString & baseDir, bool isUnityNode = false, bool isIsolatedFromUnityNode = false );
     ObjectNode * CreateObjectNode( NodeGraph & nodeGraph,
-                                   const BFFIterator & iter,
+                                   const BFFToken * iter,
                                    const Function * function,
                                    const uint32_t flags,
                                    const uint32_t preprocessorFlags,
@@ -81,6 +80,7 @@ protected:
     Array< AString >    m_CompilerInputFiles;
     Array< AString >    m_CompilerInputUnity;
     AString             m_CompilerInputFilesRoot;
+    Array< AString >    m_CompilerInputObjectLists;
     Array< AString >    m_CompilerForceUsing;
     bool                m_CompilerInputAllowNoFiles         = false;
     bool                m_CompilerInputPathRecurse          = true;
@@ -104,6 +104,7 @@ protected:
     uint32_t            m_ObjectListInputEndIndex           = 0;
     uint32_t            m_NumCompilerInputUnity             = 0;
     uint32_t            m_NumCompilerInputFiles             = 0;
+    uint32_t            m_NumCompilerInputObjectLists       = 0;
 };
 
 //------------------------------------------------------------------------------

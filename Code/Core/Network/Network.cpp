@@ -6,10 +6,10 @@
 #include "Network.h"
 
 // Core
-#include "Core/Strings/AString.h"
 #include "Core/Network/NetworkStartupHelper.h"
 #include "Core/Process/Thread.h"
 #include "Core/Profile/Profile.h"
+#include "Core/Strings/AString.h"
 
 // system
 #if defined( __WINDOWS__ )
@@ -34,12 +34,40 @@
     if ( ::gethostname( buffer, 64 ) == 0 )
     {
         hostName = buffer;
+        return;
     }
-    else
-    {
-        ASSERT( false && "This should never fail" );
-        hostName = "Unknown";
-    }
+
+    ASSERT( false && "GetHostName should never fail" );
+    hostName = "Unknown";
+}
+
+// GetDomainName
+//------------------------------------------------------------------------------
+/*static*/ void Network::GetDomainName( AString & domainName )
+{
+    PROFILE_FUNCTION
+
+    NetworkStartupHelper nsh; // ensure network is up if not already
+
+    #if defined( __WINDOWS__ )
+        TCHAR buffer[ 256 ];
+        DWORD bufferSize = sizeof( buffer );
+        if ( GetComputerNameEx( ComputerNameDnsDomain, buffer, &bufferSize ) )
+        {
+            domainName = buffer;
+            return;
+        }
+    #else
+        char buffer[ 256 ];
+        if ( ::getdomainname( buffer, 256 ) == 0 )
+        {
+            domainName = buffer;
+            return;
+        }
+    #endif
+
+    ASSERT( false && "GetDomainName should never fail" );
+    domainName = "Unknown";
 }
 
 // GetHostIPFromName
@@ -47,6 +75,13 @@
 /*static*/ uint32_t Network::GetHostIPFromName( const AString & hostName, uint32_t timeoutMS )
 {
     PROFILE_FUNCTION
+
+    // Fast path for "localhost". Although we have a fast path for detecting ip4
+    // format adresses, it can still take several ms to call
+    if ( hostName == "127.0.0.1" )
+    {
+        return 0x0100007f;
+    }
 
     // see if string it already in ip4 format
     PRAGMA_DISABLE_PUSH_MSVC( 4996 ) // Deprecated...
@@ -75,7 +110,7 @@
     int returnCode( 0 );
     uint32_t remainingTimeMS( timeoutMS );
     const uint32_t sleepInterval( 100 ); // Check exit condition periodically - TODO:C would be better to use an event
-    for (;;)
+    for ( ;; )
     {
         returnCode = Thread::WaitForThread( handle, sleepInterval, timedOut );
 

@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <link href="../style.css" rel="stylesheet" type="text/css">
 
-<html>
+<html lang="en-US">
 <head>
+<meta charset="utf-8">
 <link rel="shortcut icon" href="../../favicon.ico">
 <title>FASTBuild - Function Reference - VCXProject</title>
 </head>
@@ -18,7 +19,6 @@
 	        <div class='navbar'>
 	            <a href='../home.html' class='lnavbutton'>Home</a><div class='navbuttonbreak'><div class='navbuttonbreakinner'></div></div>
 	            <a href='../features.html' class='navbutton'>Features</a><div class='navbuttonbreak'><div class='navbuttonbreakinner'></div></div>
-	            <a href='../status.html' class='navbutton'>Status</a><div class='navbuttonbreak'><div class='navbuttonbreakinner'></div></div>
 	            <a href='../documentation.html' class='navbutton'>Documentation</a><div class='navbuttongap'></div>
 	            <a href='../download.html' class='rnavbutton'><b>Download</b></a>
 	        </div>
@@ -44,7 +44,7 @@ Generates a project file for use with Visual Studio, allowing integration of FAS
   .ProjectFiles                   // (optional) List of files to include in project
   .ProjectFilesToExclude          // (optional) List of files to exclude from project
   .ProjectBasePath                // (optional) Base path(s) for root folder(s) in project
-  .ProjectFileTypes               // (optional) List of filters to overide base file types (see below)
+  .ProjectFileTypes               // (optional) List of filters to override base file types (see below)
 
   // Build Config Options
   .ProjectConfigs                 // (optional) List of project configurations, see below for details.
@@ -53,9 +53,11 @@ Generates a project file for use with Visual Studio, allowing integration of FAS
   // Reference Options
   .ProjectReferences              // (optional) References to assemblies (e.g "System.Core")
   .ProjectProjectReferences       // (optional) References to projects (e.g. "myproj.csproj|{guid}")
+
+  // Project Import Options
+  .ProjectProjectImports          // (optional) Array of ProjectImports, see below for details
 								  
   // Other Options
-  .RootNamespace                  // (optional) Set RootNamespace for project
   .ProjectGuid                    // (optional) Override default generated ProjectGuid
   .DefaultLanguage                // (optional) Default Language Property (for XboxOne/WinRT)
   .ApplicationEnvironment         // (optional) Application Environment (for XboxOne/WinRT)
@@ -70,6 +72,14 @@ Generates a project file for use with Visual Studio, allowing integration of FAS
 [
   .FileType                       // FileType to use (e.g. "CppForm")
   .Pattern                        // Pattern of files to apply to (e.g. "*\\Forms\\*.h")
+]
+
+// ProjectProjectImports - structs in the following format
+//-------------------------------------------------
+.ProjectImport =
+[
+  .Condition                      // Condition for import
+  .Project                        // Path to file to import
 ]
 
 // ProjectConfigs - structs in the following format
@@ -111,14 +121,25 @@ Generates a project file for use with Visual Studio, allowing integration of FAS
 .LocalDebuggerCommandArguments  // (optional) Args passed to executable when debugging.
 .LocalDebuggerWorkingDirectory  // (optional) Working Dir for executable when debugging.
 .LocalDebuggerEnvironment       // (optional) Environment variables when debugging.
+.RemoteDebuggerCommand          // (optional) Executable to launch when debugging remotely.
+.RemoteDebuggerCommandArguments // (optional) Args passed to remote executable when debugging.
+.RemoteDebuggerWorkingDirectory // (optional) Working Dir for remote executable when debugging.
 .Xbox360DebuggerCommand         // (optional) Debugger command for Xbox360 only.
 .DebuggerFlavor                 // (optional) Debugger flavor.
 .AumidOverride                  // (optional) Aumid override (for XboxOne).
+.Keyword,                       // (optional) Keyword
+.ApplicationType,               // (optional) Application type
+.ApplicationTypeRevision,       // (optional) Application type revision
+.TargetLinuxPlatform            // (optional) Set the Linux platform type
+.LinuxProjectType               // (optional) Set the project type GUID for Linux
+.PackagePath,                   // (optional) Path to package to debug
+.AdditionalSymbolSearchPaths,   // (optional) Additional symbol search paths for debugging
 
 // Misc
 .PlatformToolset                // (optional) Specify PlatformToolset.
 .DeploymentType                 // (optional) Specify deployment type for Xbox360.
 .DeploymentFiles                // (optional) Specify files to add to deployment for Xbox360.
+.RootNamespace                  // (optional) Set RootNamespace for project
 </div>
 </div>
 
@@ -151,10 +172,10 @@ Generates a project file for use with Visual Studio, allowing integration of FAS
       Example:
 <div class='code'>.ProjectInputPaths  = 'Code/Library/'</div>
       Example:
-<div class='code'>.ProjectInputPaths  = [
+<div class='code'>.ProjectInputPaths  = {
                         'Code/Library/Folder1/'
                         'Code/Library/Folder2/'
-                      ]</div>
+                      }</div>
       <hr>    
 
       <p><b>.ProjectInputPathsExclude</b> - String or ArrayOfStrings - (Optional)</p>
@@ -162,10 +183,10 @@ Generates a project file for use with Visual Studio, allowing integration of FAS
       Example:
 <div class='code'>.ProjectInputPathsExclude   = 'Code/Library/SubDir/'</div>
       Example:
-<div class='code'>.ProjectInputPathsExclude   = [
+<div class='code'>.ProjectInputPathsExclude   = {
                                 'Code/Library/SubDir1/'
                                 'Code/Library/SubDir2/'
-                              ]</div>
+                              }</div>
       <hr>    
 
       
@@ -174,41 +195,44 @@ Generates a project file for use with Visual Studio, allowing integration of FAS
       Example:
 <div class='code'>.ProjectPatternToExclude   = '*/OSX/*'</div>
       Example:
-<div class='code'>.ProjectPatternToExclude   = [
+<div class='code'>.ProjectPatternToExclude   = {
                                 '*/OSX/*'
                                 '*/Linux/*'
-                              ]</div>
+                              }</div>
       <hr>    
         
         
       <p><b>.ProjectAllowedFileExtensions</b> - String or ArrayOfStrings - (Optional)</p>
       <p>Filter for file type(s) to include in the project.</p>
       Example:
-<div class='code'>.ProjectAllowedFileExtensions   = [ '*.cpp', '*.h' ]</div>
+<div class='code'>.ProjectAllowedFileExtensions   = { '*.cpp', '*.h' }</div>
       If not specified, the following filters will be used:
-<div class='code'>.ProjectAllowedFileExtensions   = [
-                                    '*.cpp', '*.hpp', '*.cxx', '*.hxx', '*.c',   '*.h',  '*.cc',   '*.hh',
-                                    '*.cp',  '*.hp',  '*.cs',  '*.inl', '*.bff', '*.rc', '*.resx', '*.m",  '*.mm',
-                                    '*.cu''
-                              ]</div>
+<div class='code'>
+.ProjectAllowedFileExtensions 	= {
+                                  '*.cpp', '*.hpp', '*.cxx', '*.hxx', '*.c',   '*.h',  '*.cc',   '*.hh',
+                                  '*.cp',  '*.hp',  '*.cs',  '*.inl', '*.bff', '*.rc', '*.resx', '*.m',  '*.mm',
+                                  '*.cu',
+                                  '*.asm', '*.s',
+                                  '*.natvis', '*.editorconfig'
+                              }</div>
       <hr>       
 
       <p><b>.ProjectFiles</b> - String or ArrayOfStrings - (Optional)</p>
       <p>File(s) to explicitly include in the project.</p>
       Example:
-<div class='code'>.ProjectFiles   = [
+<div class='code'>.ProjectFiles   = {
                     'Code/Library/SubDir/FileA.cpp'
                     'Code/Library/SubDir/FileA.h'
-                  ]</div>
+                  }</div>
       <hr> 
 
       <p><b>.ProjectFilesToExclude</b> - String or ArrayOfStrings - (Optional)</p>
       <p>Files to exclude from the project (filtered from files discovered via ProjectInputPaths).</p>
       Example:
-<div class='code'>.ProjectFilesToExclude  = [
+<div class='code'>.ProjectFilesToExclude  = {
                             'Code/Library/SubDir/FileB.cpp'
                             'Code/Library/SubDir/FileB.h'
-                          ]</div>
+                          }</div>
       <hr> 
 
 
@@ -270,7 +294,7 @@ Example:
 <div class='newsitembody'>
 
       <p><b>.ProjectReferences</b> - String or ArrayOfStrings - (Optional)</p>
-      <p>References to assemblies can be specified.  This may be necessary if mixing C#, Mangaged C++ and C++ projects.</p>
+      <p>References to assemblies can be specified.  This may be necessary if mixing C#, Managed C++ and C++ projects.</p>
       Example:
 <div class='code'>.ProjectReferences = 'System.Core'</div>
       Example:
@@ -291,15 +315,35 @@ Example:
                             }</div>
 </div>
 
+
+
+<div class='newsitemheader'>Project Import Options</div>
+<div class='newsitembody'>
+
+      <p><b>.ProjectProjectImports</b> - ArrayOfStructs - (Optional)</p>
+      <p>Additional .targets files can be imported into a Visual Studio project. This can be useful
+      for better integration/debugging of non-native architectures.</p>
+      Example:
+<div class='code'>.ProjectImport          = [
+                            .Condition = "'$(ConfigurationType)' == 'Makefile'"
+                            .Project = "$(VCTargetsPath)\Platforms\$(Platform)\Custom.Makefile.targets"
+                          ]
+.ProjectProjectImports  = { .ProjectImport }</div>
+      NOTE: By default, the following project imports are active.
+<div class='code'>.ProjectImportPS4       = [
+                            .Condition = "'$(ConfigurationType)' == 'Makefile' and Exists('$(VCTargetsPath)\Platforms\$(Platform)\SCE.Makefile.$(Platform).targets')"
+                            .Project = "$(VCTargetsPath)\Platforms\$(Platform)\SCE.Makefile.$(Platform).targets"
+                          ]
+.ProjectImportAndroid   = [
+                            .Condition = "'$(ConfigurationType)' == 'Makefile' and '$(AndroidAPILevel)' != '' and Exists('$(VCTargetsPath)\Application Type\$(ApplicationType)\$(ApplicationTypeRevision)\Android.Common.targets')"
+                            .Project = "$(VCTargetsPath)\Application Type\$(ApplicationType)\$(ApplicationTypeRevision)\Android.Common.targets"
+                          ]
+.ProjectProjectImports  = { .ProjectImportPS4, .ProjectImportAndroid }</div>
+</div>
+
+
 <div class='newsitemheader'>Other Options</div>
 <div class='newsitembody'>
-      <p><b>.RootNamespace</b> - String - (Optional)</p>
-      <p>Set the RootNamespace for a project.</p>
-      Example:
-<div class='code'>.RootNamespace = 'MyProject'</div>
-      <hr> 
-
-      
       <p><b>.ProjectGuid</b> - String - (Optional)</p>
       <p>Override default generated ProjectGuid.</p>
       <p>By default, a Guid for a project will be generated automatically.  If necessary, a 
@@ -405,7 +449,7 @@ Example:
 <div class='code'>.PreprocessorDefinitions = 'DEBUG;MY_LIB_DEFINE;__WINDOWS__;'</div>
 <hr>
       <p><b>IncludeSearchPath</b> - String - (Optional)</p>
-      <p>Include search paths for Intellisense can be manually specified. If the .Target for a configuration is specified, this will be populated automatically by detecting use of /I or -I
+      <p>Include search paths for Intellisense can be manually specified. If the .Target for a configuration is specified, this will be populated automatically by detecting use of /I, -I, -isystem, -isystem-after, /imsvc, -imsvc, -idirafter or -iquote
       in the compiler command line. Manual specification will override the automated detection.</p>
       Example:
 <div class='code'>.IncludeSearchPath = 'Code/Core/;Code/Engine/;'</div>
@@ -432,7 +476,9 @@ Example:
 <hr>
 
       <p><b>LocalDebuggerCommand</b> - String - (Optional)</p>
-      <p>Executable to launch when debugging.</p>
+      <p>Explicitly specify the executable to launch when debugging. The LocalDebuggerCommand property of a
+Visual Studio project is usually set automatically by FASTBuild (extracted from the .Target specified per
+build configuration), but can be explicitily set via .LocalDebuggerCommand if desired.<p>
       Example:
 <div class='code'>.LocalDebuggerCommand  = 'tmp/bin/MyExe.exe'</div>
 <hr>
@@ -455,6 +501,26 @@ Example:
 <div class='code'>.LocalDebuggerEnvironment = '_NO_DEBUG_HEAP=1' // Disable debug heap</div>
 <hr>
 
+      <p><b>RemoteDebuggerCommand</b> - String - (Optional)</p>
+      <p>Executable to launch when debugging remotely.</p>
+      Specify the executable to launch when debugging remotely, when using the
+      Windows Subsystem for Linux for example.<p>
+      Example:
+<div class='code'>.RemoteDebuggerCommand  = '/mnt/c/bin/myexe'</div>
+<hr>
+
+      <p><b>RemoteDebuggerCommandArguments</b> - String - (Optional)</p>
+      <p>Args passed to remote executable when debugging.</p>
+      Example:
+<div class='code'>.RemoteDebuggerCommandArguments = '-myArg'</div>
+<hr>
+
+      <p><b>RemoteDebuggerWorkingDirectory</b> - String - (Optional)</p>
+      <p>Working Dir for remote executable when debugging.</p>
+      Example:
+<div class='code'>.LocalDebuggerWorkingDirectory = '/mnt/c/bin/'</div>
+<hr>
+
       <p><b>Xbox360DebuggerCommand</b> - String - (Optional)</p>
       <p>Debugger command for Xbox360 only.</p>
 <hr>
@@ -469,6 +535,38 @@ Example:
       <p>Aumid override (for XboxOne).</p>
 <hr>
 
+      <p><b>Keyword</b> - String - (Optional)</p>
+      <p>Keyword e.g. 'Android'</p>
+
+<hr>
+      <p><b>ApplicationType</b> - String - (Optional)</p>
+      <p>ApplicationType e.g. 'Android'</p>
+
+<hr>
+      <p><b>ApplicationTypeRevision</b> - String - (Optional)</p>
+      <p>ApplicationType e.g. '3.0'</p>
+
+<hr>
+      <p><b>TargetLinuxPlatform</b> - String - (Optional)</p>
+      <p>Set the Linux platform type.</p>
+      Example:
+<div class='code'>.TargetLinuxPlatform = 'Generic'</div>
+
+<hr>
+      <p><b>LinuxProjectType</b> - String - (Optional)</p>
+      <p>Set the project type GUID for Linux.</p>
+      Example:
+<div class='code'>.LinuxProjectType = '{D51BCBC9-82E9-4017-911E-C93873C4EA2B}'</div>
+
+<hr>
+      <p><b>PackagePath</b> - String - (Optional)</p>
+      <p>Path to the package to be used for debugging.</p>
+
+<hr>
+      <p><b>AdditionalSymbolSearchPaths</b> - String - (Optional)</p>
+      <p>Path to additional symbols to be used when debugging.</p>
+<hr>
+
       <p><b>PlatformToolset</b> - String - (Optional)</p>
       <p>Specify PlatformToolset.</p>
       Example:
@@ -481,9 +579,17 @@ Example:
 
       <p><b>DeploymentFiles</b> - String - (Optional)</p>
       <p>Specify files to add to deployment for Xbox360.</p>
+<hr>
+
+      <p><b>.RootNamespace</b> - String - (Optional)</p>
+      <p>Set the RootNamespace for a project.</p>
+      Example:
+<div class='code'>.RootNamespace = 'MyProject'</div>
+      <hr> 
+
 
 </div>
 
-    </div><div class='footer'>&copy; 2012-2019 Franta Fulin</div></div></div>
+    </div><div class='footer'>&copy; 2012-2020 Franta Fulin</div></div></div>
 </body>
 </html>

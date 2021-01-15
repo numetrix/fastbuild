@@ -10,8 +10,7 @@
 #include "Tools/FBuild/FBuildCore/Graph/NodeGraph.h"
 #include "Tools/FBuild/FBuildCore/Helpers/CompilationDatabase.h"
 
-#include "Core/Containers/AutoPtr.h"
-#include "Core/FileIO/FileStream.h"
+// Core
 #include "Core/FileIO/PathUtils.h"
 #include "Core/Strings/AStackString.h"
 
@@ -168,22 +167,15 @@ void TestCompilationDatabase::TestUnityInputPath() const
 //------------------------------------------------------------------------------
 void TestCompilationDatabase::DoTest( const char * bffFile, const char * target, const char * result ) const
 {
-    FileStream f;
-    TEST_ASSERT( f.Open( bffFile, FileStream::READ_ONLY ) );
-    uint32_t fileSize = (uint32_t)f.GetFileSize();
-    AutoPtr< char > mem( (char *)ALLOC( fileSize + 1 ) );
-    mem.Get()[ fileSize ] = '\000'; // parser requires sentinel
-    TEST_ASSERT( f.Read( mem.Get(), fileSize ) == fileSize );
-
     FBuild fBuild;
     NodeGraph ng;
     BFFParser p( ng );
-    TEST_ASSERT( p.Parse( mem.Get(), fileSize, bffFile, 0, 0 ) );
+    TEST_ASSERT( p.ParseFromFile( bffFile ) );
 
     Dependencies deps;
     Node * node = ng.FindNode( AStackString<>( target ) );
     TEST_ASSERT( node != nullptr );
-    deps.Append( Dependency( node ) );
+    deps.EmplaceBack( node );
 
     CompilationDatabase compdb;
     const AString & actualResult = compdb.Generate( ng, deps );

@@ -35,8 +35,8 @@
 
 // Static Data
 //------------------------------------------------------------------------------
-/*static*/ bool FLog::s_ShowInfo = false;
-/*static*/ bool FLog::s_ShowBuildCommands = true;
+/*static*/ bool FLog::s_ShowVerbose = false;
+/*static*/ bool FLog::s_ShowBuildReason = false;
 /*static*/ bool FLog::s_ShowErrors = true;
 /*static*/ bool FLog::s_ShowProgress = false;
 /*static*/ bool FLog::s_MonitorEnabled = false;
@@ -52,7 +52,7 @@ static FileStream * g_MonitorFileStream = nullptr;
 
 // Info
 //------------------------------------------------------------------------------
-/*static*/ void FLog::Info( const char * formatString, ... )
+/*static*/ void FLog::Verbose( MSVC_SAL_PRINTF const char * formatString, ... )
 {
     AStackString< 8192 > buffer;
 
@@ -61,12 +61,12 @@ static FileStream * g_MonitorFileStream = nullptr;
     buffer.VFormat( formatString, args );
     va_end( args );
 
-    Output( "Info:", buffer.Get() );
+    OutputInternal( "Info:", buffer.Get() );
 }
 
-// Build
+// Output
 //------------------------------------------------------------------------------
-/*static*/ void FLog::Build( const char * formatString, ... )
+/*static*/ void FLog::Output( MSVC_SAL_PRINTF const char * formatString, ... )
 {
     AStackString< 8192 > buffer;
 
@@ -74,13 +74,18 @@ static FileStream * g_MonitorFileStream = nullptr;
     va_start(args, formatString);
     buffer.VFormat( formatString, args );
     va_end( args );
+
+    if ( buffer.IsEmpty() ) // Ignore empty messages for caller convenience
+    {
+        return;
+    }
 
     Tracing::Output( buffer.Get() );
 }
 
 // Monitor
 //------------------------------------------------------------------------------
-/*static*/ void FLog::Monitor( const char * formatString, ... )
+/*static*/ void FLog::Monitor( MSVC_SAL_PRINTF const char * formatString, ... )
 {
     // Is monitoring enabled?
     if ( g_MonitorFileStream == nullptr )
@@ -103,16 +108,21 @@ static FileStream * g_MonitorFileStream = nullptr;
     g_MonitorFileStream->WriteBuffer( finalBuffer.Get(), finalBuffer.GetLength() );
 }
 
-// BuildDirect
+// Output
 //------------------------------------------------------------------------------
-/*static*/ void FLog::BuildDirect( const char * message )
+/*static*/ void FLog::Output( const AString & message )
 {
-    Tracing::Output( message );
+    if ( message.IsEmpty() ) // Ignore empty messages for caller convenience
+    {
+        return;
+    }
+
+    Tracing::Output( message.Get() );
 }
 
 // Warning
 //------------------------------------------------------------------------------
-/*static*/ void FLog::Warning( const char * formatString, ... )
+/*static*/ void FLog::Warning( MSVC_SAL_PRINTF const char * formatString, ... )
 {
     AStackString< 8192 > buffer;
 
@@ -121,12 +131,12 @@ static FileStream * g_MonitorFileStream = nullptr;
     buffer.VFormat( formatString, args );
     va_end( args );
 
-    Output( "Warning:", buffer.Get() );
+    OutputInternal( "Warning:", buffer.Get() );
 }
 
 // Error
 //------------------------------------------------------------------------------
-/*static*/ void FLog::Error( const char * formatString, ... )
+/*static*/ void FLog::Error( MSVC_SAL_PRINTF const char * formatString, ... )
 {
     // we prevent output here, rather than where the macros is inserted
     // as an error being output is not the normal code path, and a check
@@ -143,7 +153,7 @@ static FileStream * g_MonitorFileStream = nullptr;
     buffer.VFormat( formatString, args );
     va_end( args );
 
-    Output( "Error:", buffer.Get() );
+    OutputInternal( "Error:", buffer.Get() );
 }
 
 // ErrorDirect
@@ -160,9 +170,9 @@ static FileStream * g_MonitorFileStream = nullptr;
 
 // Output - write to stdout and debugger
 //------------------------------------------------------------------------------
-/*static*/ void FLog::Output( const char * type, const char * message )
+/*static*/ void FLog::OutputInternal( const char * type, const char * message )
 {
-    if( type == nullptr )
+    if ( type == nullptr )
     {
         OUTPUT( "%s", message );
         return;
@@ -259,7 +269,7 @@ static FileStream * g_MonitorFileStream = nullptr;
 
     // format progress % (we know it never goes above 99.9%)
     uint32_t intPerc = (uint32_t)( percentage * 10.0f ); // 0 to 999
-    uint32_t hundreds = ( intPerc / 100 ); intPerc -= ( hundreds * 100 );
+    const uint32_t hundreds = ( intPerc / 100 ); intPerc -= ( hundreds * 100 );
     uint32_t tens = ( intPerc / 10 ); intPerc -= ( tens * 10 );
     uint32_t ones = intPerc;
     m_ProgressText = g_OutputString;
@@ -268,15 +278,15 @@ static FileStream * g_MonitorFileStream = nullptr;
     m_ProgressText[ 4 ] = '0' + (char)ones;
 
     // 20 column output (100/20 = 5% per char)
-    uint32_t numStarsDone = (uint32_t)( percentage * 20.0f / 100.0f ); // 20 columns
+    const uint32_t numStarsDone = (uint32_t)( percentage * 20.0f / 100.0f ); // 20 columns
     for ( uint32_t i=0; i<20; ++i )
     {
         m_ProgressText[ 9 + i ] = ( i < numStarsDone ) ? '*' : '-';
     }
 
     // time " [%um] %02us"
-    uint32_t timeTakenMinutes = uint32_t( time / 60.0f );
-    uint32_t timeTakenSeconds = (uint32_t)time - ( timeTakenMinutes * 60 );
+    const uint32_t timeTakenMinutes = uint32_t( time / 60.0f );
+    const uint32_t timeTakenSeconds = (uint32_t)time - ( timeTakenMinutes * 60 );
     if ( timeTakenMinutes > 0 )
     {
         char buffer[ 8 ];
@@ -340,7 +350,7 @@ static FileStream * g_MonitorFileStream = nullptr;
 //------------------------------------------------------------------------------
 /*static*/ bool FLog::TracingOutputCallback( const char * message )
 {
-    uint32_t threadIndex = WorkerThread::GetThreadIndex();
+    const uint32_t threadIndex = WorkerThread::GetThreadIndex();
 
     AStackString< 2048 > tmp;
 

@@ -46,7 +46,7 @@ void TestExe::CreateNode() const
     #else
         AStackString<> exeName( "/tmp/exe.exe" );
     #endif
-    ExeNode * exeNode = ng.CreateExeNode( exeName );
+    const ExeNode * exeNode = ng.CreateExeNode( exeName );
     TEST_ASSERT( exeNode->GetType() == Node::EXE_NODE );
     TEST_ASSERT( ExeNode::GetTypeS() == Node::EXE_NODE );
     TEST_ASSERT( AStackString<>( "Exe" ) == exeNode->GetTypeName() );
@@ -68,7 +68,7 @@ void TestExe::Build() const
     EnsureFileDoesNotExist( exe );
 
     // build (via alias)
-    TEST_ASSERT( fBuild.Build( AStackString<>( "Exe" ) ) );
+    TEST_ASSERT( fBuild.Build( "Exe" ) );
     TEST_ASSERT( fBuild.SaveDependencyGraph( "../tmp/Test/Exe/exe.fdb" ) );
 
     // make sure all output is where it is expected
@@ -105,7 +105,7 @@ void TestExe::Build_NoRebuild() const
     TEST_ASSERT( fBuild.Initialize( "../tmp/Test/Exe/exe.fdb" ) );
 
     // build (via alias)
-    TEST_ASSERT( fBuild.Build( AStackString<>( "Exe" ) ) );
+    TEST_ASSERT( fBuild.Build( "Exe" ) );
 
     // Check stats
     //               Seen,  Built,  Type

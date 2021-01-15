@@ -5,16 +5,18 @@
 //------------------------------------------------------------------------------
 #include "FBuildTest.h"
 
-// FBuild
-#include "Tools/FBuild/FBuildCore/Helpers/VSProjectGenerator.h"
+// FBuildCore
 #include "Tools/FBuild/FBuildCore/FBuild.h"
 #include "Tools/FBuild/FBuildCore/Graph/NodeGraph.h"
 #include "Tools/FBuild/FBuildCore/Graph/VCXProjectNode.h"
+#include "Tools/FBuild/FBuildCore/Helpers/ProjectGeneratorBase.h"
+#include "Tools/FBuild/FBuildCore/Helpers/VSProjectGenerator.h"
 
 // Core
 #include "Core/FileIO/FileIO.h"
 #include "Core/FileIO/FileStream.h"
 #include "Core/FileIO/PathUtils.h"
+#include "Core/Math/Random.h"
 #include "Core/Process/Thread.h"
 #include "Core/Strings/AStackString.h"
 #include "Core/Tracing/Tracing.h"
@@ -31,6 +33,7 @@ private:
     void TestFunction() const;
     void TestFunction_NoRebuild() const;
     void TestFunction_Speed() const;
+    void FindExecutableTarget() const;
 
     // VCXProj
     void VCXProj_DefaultConfigs() const;
@@ -46,6 +49,12 @@ private:
     void Solution_BuildAndDeploy_None() const;
     void Solution_BuildAndDeploy_Project() const;
     void Solution_BuildAndDeploy_PerSolutionConfig() const;
+    void Solution_Items() const;
+
+    // VSExternalProj
+    void VSExternalProj_ExternalProject() const;
+    void VSExternalProj_ExternalProjectWrongData() const;
+    void VSExternalProj_ExternalProject_MissingProjectGUID() const;
 
     // XCode
     void XCode() const;
@@ -65,6 +74,7 @@ REGISTER_TESTS_BEGIN( TestProjectGeneration )
     REGISTER_TEST( TestFunction )
     REGISTER_TEST( TestFunction_NoRebuild )
     REGISTER_TEST( TestFunction_Speed )
+    REGISTER_TEST( FindExecutableTarget )
     REGISTER_TEST( VCXProj_DefaultConfigs )
     REGISTER_TEST( VCXProj_PerConfigOverrides )
     REGISTER_TEST( VCXProj_HandleDuplicateFiles )
@@ -76,6 +86,12 @@ REGISTER_TESTS_BEGIN( TestProjectGeneration )
     REGISTER_TEST( Solution_BuildAndDeploy_None )
     REGISTER_TEST( Solution_BuildAndDeploy_Project )
     REGISTER_TEST( Solution_BuildAndDeploy_PerSolutionConfig )
+    REGISTER_TEST( Solution_Items )
+    REGISTER_TEST( VSExternalProj_ExternalProject )
+    #if defined( __WINDOWS__ )
+        REGISTER_TEST( VSExternalProj_ExternalProjectWrongData )
+    #endif
+    REGISTER_TEST( VSExternalProj_ExternalProject_MissingProjectGUID )
     REGISTER_TEST( XCode )
     REGISTER_TEST( IntellisenseAndCodeSense )
 REGISTER_TESTS_END
@@ -149,13 +165,16 @@ void TestProjectGeneration::Test() const
         fileTypes.Append( ft );
     }
 
+    // Project Imports
+    Array< VSProjectImport > projectImports;
+
     FBuild fBuild; // needed for NodeGraph::CleanPath
 
     AStackString<> projectFile( "../../../../tmp/Test/ProjectGeneration/Core.vcxproj" );
     AStackString<> projectFileClean;
     NodeGraph::CleanPath( projectFile, projectFileClean );
 
-    const AString & vcxproj = pg.GenerateVCXProj( projectFileClean, configs, fileTypes );
+    const AString & vcxproj = pg.GenerateVCXProj( projectFileClean, configs, fileTypes, projectImports );
     const AString & filters = pg.GenerateVCXProjFilters( projectFileClean );
 
     TEST_ASSERT( FileIO::EnsurePathExists( AStackString<>( "../../../../tmp/Test/ProjectGeneration/" ) ) );
@@ -189,7 +208,7 @@ void TestProjectGeneration::TestFunction() const
     EnsureFileDoesNotExist( filters );
 
     // do build
-    TEST_ASSERT( fBuild.Build( AStackString<>( "TestSln" ) ) );
+    TEST_ASSERT( fBuild.Build( "TestSln" ) );
     TEST_ASSERT( fBuild.SaveDependencyGraph( "../tmp/Test/ProjectGeneration/fbuild.fdb" ) );
 
     EnsureFileExists( project );
@@ -238,7 +257,7 @@ void TestProjectGeneration::TestFunction_NoRebuild() const
     #endif
 
     // do build
-    TEST_ASSERT( fBuild.Build( AStackString<>( "TestProj" ) ) );
+    TEST_ASSERT( fBuild.Build( "TestProj" ) );
 
     // Make sure files have not been changed
     TEST_ASSERT( dateTime1 == FileIO::GetFileLastWriteTime( project ) );
@@ -279,9 +298,27 @@ void TestProjectGeneration::TestFunction_Speed() const
     cfg.m_Platform = "x64";     cfg.m_Config = "Profile";   configs.Append( cfg );
     cfg.m_Platform = "x64";     cfg.m_Config = "Release";   configs.Append( cfg );
 
-    // files
-    Array< AString > files;
-    FileIO::GetFiles( baseDir, AStackString<>( "*" ), true, &files );
+    // Generate a large list of files
+    Random r( 1234567 ); // Deterministic seed
+    const size_t numFiles = 5000;
+    const size_t maxSubDirDepth = 8;
+    Array< AString > files( numFiles, false );
+    for ( size_t i = 0; i < numFiles; ++i )
+    {
+        AStackString<> fileName( baseDir );
+
+        // Add to different sub-directories
+        const size_t subDirDepth = r.GetRandIndex( maxSubDirDepth );
+        for ( size_t j = 0; j < subDirDepth; ++j )
+        {
+            fileName.AppendFormat( "%02x/", r.GetRand() & 0xFF );
+        }
+
+        // Unique file name
+        fileName.AppendFormat( "%08x.cpp", (uint32_t)i );
+
+        files.Append( fileName );
+    }
     pg.AddFiles( files );
 
     Array< VSProjectFileType > fileTypes;
@@ -295,6 +332,8 @@ void TestProjectGeneration::TestFunction_Speed() const
         fileTypes.Append( ft );
     }
 
+    Array< VSProjectImport > projectImports;
+
     AStackString<> projectFileName;
     projectFileName.Format( "%s//dummy.vcxproj", baseDir.Get() );
     PathUtils::FixupFilePath( projectFileName );
@@ -303,7 +342,7 @@ void TestProjectGeneration::TestFunction_Speed() const
         Timer t;
         for ( size_t i = 0; i < 5; ++i )
         {
-            pg.GenerateVCXProj( projectFileName, configs, fileTypes );
+            pg.GenerateVCXProj( projectFileName, configs, fileTypes, projectImports );
         }
         float time = t.GetElapsed();
         OUTPUT( "Gen vcxproj        : %2.3fs\n", (double)time );
@@ -319,6 +358,42 @@ void TestProjectGeneration::TestFunction_Speed() const
     }
 }
 
+// FindExecutableTarget
+//
+// When generating projects we sometimes need the path executable related to
+// the project in a given config (to set the executable to debug for example)
+//------------------------------------------------------------------------------
+void TestProjectGeneration::FindExecutableTarget() const
+{
+    // Parse bff
+    FBuildTestOptions options;
+    options.m_ConfigFile = "Tools/FBuild/FBuildTest/Data/TestProjectGeneration/FindExecutableTarget/fbuild.bff";
+    FBuildForTest fBuild( options );
+    TEST_ASSERT( fBuild.Initialize() );
+
+    // Alias -> Test -> Executable
+    //  - This should return the Executable
+    {
+        const Node * testAlias = fBuild.GetNode( "AliasToTest" );
+        TEST_ASSERT( testAlias );
+        const Node * exe = ProjectGeneratorBase::FindExecutableDebugTarget( testAlias );
+        TEST_ASSERT( exe );
+        TEST_ASSERT( exe->GetType() == Node::EXE_NODE );
+    }
+
+    // Alias -> Copy -> Executable
+    //  - This should return the Copy of the Executable (if making a copy
+    //    it's likely a "staging dir" is being created and you want to
+    //    collect dependencies in that folder and run from that folder)
+    {
+        const Node * copyAlias = fBuild.GetNode( "AliasToCopy" );
+        TEST_ASSERT( copyAlias );
+        const Node * copy = ProjectGeneratorBase::FindExecutableDebugTarget( copyAlias );
+        TEST_ASSERT( copy );
+        TEST_ASSERT( copy->GetType() == Node::COPY_FILE_NODE );
+    }
+}
+
 // IntellisenseAndCodeSense
 //------------------------------------------------------------------------------
 void TestProjectGeneration::IntellisenseAndCodeSense() const
@@ -330,19 +405,21 @@ void TestProjectGeneration::IntellisenseAndCodeSense() const
     TEST_ASSERT( fBuild.Initialize() );
 
     // Generate project
-    TEST_ASSERT( fBuild.Build( AStackString<>( "Intellisense" ) ) );
+    TEST_ASSERT( fBuild.Build( "Intellisense" ) );
 
     // Ensure VS Intellisense info is present
     VCXProj_Intellisense_Check( "../tmp/Test/ProjectGeneration/Intellisense/ObjectList.vcxproj" );
     VCXProj_Intellisense_Check( "../tmp/Test/ProjectGeneration/Intellisense/Library.vcxproj" );
     VCXProj_Intellisense_Check( "../tmp/Test/ProjectGeneration/Intellisense/Executable.vcxproj" );
     VCXProj_Intellisense_Check( "../tmp/Test/ProjectGeneration/Intellisense/Test.vcxproj" );
+    VCXProj_Intellisense_Check( "../tmp/Test/ProjectGeneration/Intellisense/Copy.vcxproj" );
 
     // Ensure XCode CodeSense info is present
     XCodeProj_CodeSense_Check( "../tmp/Test/ProjectGeneration/Intellisense/ObjectList.xcodeproj/project.pbxproj" );
     XCodeProj_CodeSense_Check( "../tmp/Test/ProjectGeneration/Intellisense/Library.xcodeproj/project.pbxproj" );
     XCodeProj_CodeSense_Check( "../tmp/Test/ProjectGeneration/Intellisense/Executable.xcodeproj/project.pbxproj" );
     XCodeProj_CodeSense_Check( "../tmp/Test/ProjectGeneration/Intellisense/Test.xcodeproj/project.pbxproj" );
+    XCodeProj_CodeSense_Check( "../tmp/Test/ProjectGeneration/Intellisense/Copy.xcodeproj/project.pbxproj" );
 }
 
 // VCXProj_Intellisense_Check
@@ -376,16 +453,69 @@ void TestProjectGeneration::VCXProj_Intellisense_Check( const char * projectFile
             TEST_ASSERT( token.Find( "INTELLISENSE_QUOTED_SLASH_SPACE_DEFINE" ) );
             definesOk = true;
         }
-        else if ( token.Find( "NMakeIncludeSearchPath" ) )
+        else if ( token.Find( "<NMakeIncludeSearchPath>" ) )
         {
-            TEST_ASSERT( token.Find( "Intellisense\\Include\\Path" ) );
-            TEST_ASSERT( token.Find( "Intellisense\\Include\\Space\\Path" ) );
-            TEST_ASSERT( token.Find( "Intellisense\\Include\\Slash\\Path" ) );
-            TEST_ASSERT( token.Find( "Intellisense\\Include\\Slash\\Space\\Path" ) );
-            TEST_ASSERT( token.Find( "Intellisense\\Include\\Quoted\\Path" ) );
-            TEST_ASSERT( token.Find( "Intellisense\\Include\\Quoted\\Space\\Path" ) );
-            TEST_ASSERT( token.Find( "Intellisense\\Include\\Quoted\\Slash\\Path" ) );
-            TEST_ASSERT( token.Find( "Intellisense\\Include\\Quoted\\Slash\\Space\\Path" ) );
+            const char * pos = token.Find( "<NMakeIncludeSearchPath>" );
+
+            const char * openTagEnd = token.Find( '>', pos );
+            TEST_ASSERT( openTagEnd != nullptr );
+
+            const char * closeTagBegin = token.FindLast( "</NMakeIncludeSearchPath>" );
+            TEST_ASSERT( closeTagBegin != nullptr );
+            TEST_ASSERT( openTagEnd < closeTagBegin );
+
+            const AStackString<> tagValue( openTagEnd + 1, closeTagBegin );
+            StackArray< AString > paths;
+            tagValue.Tokenize( paths, ';' );
+
+            // We only interested in checking relative ordering of paths that contain "Intellisense\\".
+            Array< AString > includes;
+            for ( const AString & path : paths )
+            {
+                const char * pathStartPos = path.Find( "Intellisense\\" );
+                if ( pathStartPos != nullptr )
+                {
+                    // Check that we separated path from the option name correctly.
+                    TEST_ASSERT( ( pathStartPos == path.Get() ) || ( pathStartPos[ -1 ] == '\\' ) );
+
+                    includes.EmplaceBack( pathStartPos, path.GetEnd() );
+                }
+            }
+
+            TEST_ASSERT( includes.GetSize() == 32 );
+            TEST_ASSERT( includes[  0 ] == "Intellisense\\Include\\Path" );
+            TEST_ASSERT( includes[  1 ] == "Intellisense\\Include\\Space\\Path" );
+            TEST_ASSERT( includes[  2 ] == "Intellisense\\Include\\Slash\\Path" );
+            TEST_ASSERT( includes[  3 ] == "Intellisense\\Include\\Slash\\Space\\Path" );
+            TEST_ASSERT( includes[  4 ] == "Intellisense\\Include\\Quoted\\Path" );
+            TEST_ASSERT( includes[  5 ] == "Intellisense\\Include\\Quoted\\Space\\Path" );
+            TEST_ASSERT( includes[  6 ] == "Intellisense\\Include\\Quoted\\Slash\\Path" );
+            TEST_ASSERT( includes[  7 ] == "Intellisense\\Include\\Quoted\\Slash\\Space\\Path" );
+            TEST_ASSERT( includes[  8 ] == "Intellisense\\SystemInclude\\Path" );
+            TEST_ASSERT( includes[  9 ] == "Intellisense\\SystemInclude\\Space\\Path" );
+            TEST_ASSERT( includes[ 10 ] == "Intellisense\\SystemInclude\\Quoted\\Path" );
+            TEST_ASSERT( includes[ 11 ] == "Intellisense\\SystemInclude\\Quoted\\Space\\Path" );
+            TEST_ASSERT( includes[ 12 ] == "Intellisense\\SystemAfterInclude\\Path" );
+            TEST_ASSERT( includes[ 13 ] == "Intellisense\\SystemAfterInclude\\Space\\Path" );
+            TEST_ASSERT( includes[ 14 ] == "Intellisense\\SystemAfterInclude\\Quoted\\Path" );
+            TEST_ASSERT( includes[ 15 ] == "Intellisense\\SystemAfterInclude\\Quoted\\Space\\Path" );
+            TEST_ASSERT( includes[ 16 ] == "Intellisense\\MSVCInclude\\Path" );
+            TEST_ASSERT( includes[ 17 ] == "Intellisense\\MSVCInclude\\Space\\Path" );
+            TEST_ASSERT( includes[ 18 ] == "Intellisense\\MSVCInclude\\Slash\\Path" );
+            TEST_ASSERT( includes[ 19 ] == "Intellisense\\MSVCInclude\\Slash\\Space\\Path" );
+            TEST_ASSERT( includes[ 20 ] == "Intellisense\\MSVCInclude\\Quoted\\Path" );
+            TEST_ASSERT( includes[ 21 ] == "Intellisense\\MSVCInclude\\Quoted\\Space\\Path" );
+            TEST_ASSERT( includes[ 22 ] == "Intellisense\\MSVCInclude\\Quoted\\Slash\\Path" );
+            TEST_ASSERT( includes[ 23 ] == "Intellisense\\MSVCInclude\\Quoted\\Slash\\Space\\Path" );
+            TEST_ASSERT( includes[ 24 ] == "Intellisense\\DirAfterInclude\\Path" );
+            TEST_ASSERT( includes[ 25 ] == "Intellisense\\DirAfterInclude\\Space\\Path" );
+            TEST_ASSERT( includes[ 26 ] == "Intellisense\\DirAfterInclude\\Quoted\\Path" );
+            TEST_ASSERT( includes[ 27 ] == "Intellisense\\DirAfterInclude\\Quoted\\Space\\Path" );
+            TEST_ASSERT( includes[ 28 ] == "Intellisense\\QuoteInclude\\Path" );
+            TEST_ASSERT( includes[ 29 ] == "Intellisense\\QuoteInclude\\Space\\Path" );
+            TEST_ASSERT( includes[ 30 ] == "Intellisense\\QuoteInclude\\Quoted\\Path" );
+            TEST_ASSERT( includes[ 31 ] == "Intellisense\\QuoteInclude\\Quoted\\Space\\Path" );
+
             includesOk = true;
         }
         else if ( token.Find( "AdditionalOptions" ) )
@@ -416,9 +546,8 @@ void TestProjectGeneration::XCodeProj_CodeSense_Check( const char * projectFile 
 
     // Check
     const size_t NUM_DEFINES = 8;
-    bool definesOk[ NUM_DEFINES ] = { false, false, false, false, false, false, false, false };
-    const size_t NUM_INCLUDES = 8;
-    bool includesOk[ NUM_INCLUDES ] = { false, false, false, false, false, false, false, false };
+    bool definesOk[ NUM_DEFINES ] = {};
+    Array< AString > includes;
     bool inDefineSection = false;
     bool inIncludeSection = false;
     for ( const AString & token : tokens )
@@ -464,27 +593,60 @@ void TestProjectGeneration::XCodeProj_CodeSense_Check( const char * projectFile 
         // Includes
         if ( inIncludeSection )
         {
-            if ( token.Find( "Intellisense/Include/Path" ) )                    { includesOk[ 0 ] = true; }
-            if ( token.Find( "Intellisense/Include/Space/Path" ) )              { includesOk[ 1 ] = true; }
-            if ( token.Find( "Intellisense/Include/Slash/Path" ) )              { includesOk[ 2 ] = true; }
-            if ( token.Find( "Intellisense/Include/Slash/Space/Path" ) )        { includesOk[ 3 ] = true; }
-            if ( token.Find( "Intellisense/Include/Quoted/Path" ) )             { includesOk[ 4 ] = true; }
-            if ( token.Find( "Intellisense/Include/Quoted/Space/Path" ) )       { includesOk[ 5 ] = true; }
-            if ( token.Find( "Intellisense/Include/Quoted/Slash/Path" ) )       { includesOk[ 6 ] = true; }
-            if ( token.Find( "Intellisense/Include/Quoted/Slash/Space/Path" ) ) { includesOk[ 7 ] = true; }
+            // We only interested in checking relative ordering of paths that contain "Intellisense\\".
+            const char * pathStartPos = token.Find( "Intellisense/" );
+            if ( pathStartPos != nullptr )
+            {
+
+                // Check that we separated path from the option name correctly.
+                TEST_ASSERT( ( pathStartPos == token.Get() ) || ( pathStartPos[ -1 ] == '/' ) );
+
+                const char * pathEndPos = token.GetEnd() - ( token.EndsWith( ',' ) ? 1 : 0 );
+                includes.EmplaceBack( pathStartPos, pathEndPos );
+            }
             continue;
         }
     }
 
     // Check we found them all
-    for ( size_t i=0; i<NUM_DEFINES; ++i )
+    for ( size_t i = 0; i < NUM_DEFINES; ++i )
     {
-        TEST_ASSERT( definesOk[ i ]  );
+        TEST_ASSERT( definesOk[ i ] );
     }
-    for ( size_t i=0; i<NUM_INCLUDES; ++i )
-    {
-        TEST_ASSERT( includesOk[ i ]  );
-    }
+
+    TEST_ASSERT( includes.GetSize() == 32 );
+    TEST_ASSERT( includes[  0 ] == "Intellisense/Include/Path" );
+    TEST_ASSERT( includes[  1 ] == "Intellisense/Include/Space/Path" );
+    TEST_ASSERT( includes[  2 ] == "Intellisense/Include/Slash/Path" );
+    TEST_ASSERT( includes[  3 ] == "Intellisense/Include/Slash/Space/Path" );
+    TEST_ASSERT( includes[  4 ] == "Intellisense/Include/Quoted/Path" );
+    TEST_ASSERT( includes[  5 ] == "Intellisense/Include/Quoted/Space/Path" );
+    TEST_ASSERT( includes[  6 ] == "Intellisense/Include/Quoted/Slash/Path" );
+    TEST_ASSERT( includes[  7 ] == "Intellisense/Include/Quoted/Slash/Space/Path" );
+    TEST_ASSERT( includes[  8 ] == "Intellisense/SystemInclude/Path" );
+    TEST_ASSERT( includes[  9 ] == "Intellisense/SystemInclude/Space/Path" );
+    TEST_ASSERT( includes[ 10 ] == "Intellisense/SystemInclude/Quoted/Path" );
+    TEST_ASSERT( includes[ 11 ] == "Intellisense/SystemInclude/Quoted/Space/Path" );
+    TEST_ASSERT( includes[ 12 ] == "Intellisense/SystemAfterInclude/Path" );
+    TEST_ASSERT( includes[ 13 ] == "Intellisense/SystemAfterInclude/Space/Path" );
+    TEST_ASSERT( includes[ 14 ] == "Intellisense/SystemAfterInclude/Quoted/Path" );
+    TEST_ASSERT( includes[ 15 ] == "Intellisense/SystemAfterInclude/Quoted/Space/Path" );
+    TEST_ASSERT( includes[ 16 ] == "Intellisense/MSVCInclude/Path" );
+    TEST_ASSERT( includes[ 17 ] == "Intellisense/MSVCInclude/Space/Path" );
+    TEST_ASSERT( includes[ 18 ] == "Intellisense/MSVCInclude/Slash/Path" );
+    TEST_ASSERT( includes[ 19 ] == "Intellisense/MSVCInclude/Slash/Space/Path" );
+    TEST_ASSERT( includes[ 20 ] == "Intellisense/MSVCInclude/Quoted/Path" );
+    TEST_ASSERT( includes[ 21 ] == "Intellisense/MSVCInclude/Quoted/Space/Path" );
+    TEST_ASSERT( includes[ 22 ] == "Intellisense/MSVCInclude/Quoted/Slash/Path" );
+    TEST_ASSERT( includes[ 23 ] == "Intellisense/MSVCInclude/Quoted/Slash/Space/Path" );
+    TEST_ASSERT( includes[ 24 ] == "Intellisense/DirAfterInclude/Path" );
+    TEST_ASSERT( includes[ 25 ] == "Intellisense/DirAfterInclude/Space/Path" );
+    TEST_ASSERT( includes[ 26 ] == "Intellisense/DirAfterInclude/Quoted/Path" );
+    TEST_ASSERT( includes[ 27 ] == "Intellisense/DirAfterInclude/Quoted/Space/Path" );
+    TEST_ASSERT( includes[ 28 ] == "Intellisense/QuoteInclude/Path" );
+    TEST_ASSERT( includes[ 29 ] == "Intellisense/QuoteInclude/Space/Path" );
+    TEST_ASSERT( includes[ 30 ] == "Intellisense/QuoteInclude/Quoted/Path" );
+    TEST_ASSERT( includes[ 31 ] == "Intellisense/QuoteInclude/Quoted/Space/Path" );
 }
 
 // VCXProj_DefaultConfigs
@@ -507,7 +669,7 @@ void TestProjectGeneration::VCXProj_DefaultConfigs() const
     EnsureFileDoesNotExist( project );
 
     // do build
-    TEST_ASSERT( fBuild.Build( AStackString<>( "DefaultConfigs" ) ) );
+    TEST_ASSERT( fBuild.Build( "DefaultConfigs" ) );
 
     // Load the generate project into memory
     FileStream f;
@@ -551,7 +713,7 @@ void TestProjectGeneration::VCXProj_PerConfigOverrides() const
     EnsureFileDoesNotExist( project );
 
     // do build
-    TEST_ASSERT( fBuild.Build( AStackString<>( "PerConfigOverrides" ) ) );
+    TEST_ASSERT( fBuild.Build( "PerConfigOverrides" ) );
 
     // Load the generate project into memory
     FileStream f;
@@ -624,7 +786,7 @@ void TestProjectGeneration::VCXProj_HandleDuplicateFiles() const
 
     // Check vcxproj
     {
-        AStackString<> proj( pg.GenerateVCXProj( projectFileName, configs, Array< VSProjectFileType >() ) );
+        AStackString<> proj( pg.GenerateVCXProj( projectFileName, configs, Array< VSProjectFileType >(), Array< VSProjectImport >() ) );
         TEST_ASSERT( proj.Replace( "File.cpp", "" ) == 1 );
         TEST_ASSERT( proj.FindI( "File.cpp" ) == nullptr );
     }
@@ -709,7 +871,7 @@ void TestProjectGeneration::VCXProj_Folders() const
 
     // Check vcxproj
     {
-        AStackString<> proj( pg.GenerateVCXProj( projectFileName, configs, Array< VSProjectFileType >() ) );
+        AStackString<> proj( pg.GenerateVCXProj( projectFileName, configs, Array< VSProjectFileType >(), Array< VSProjectImport >() ) );
         TEST_ASSERT( proj.Replace( "AFile.cpp", "" ) == 3 );
         TEST_ASSERT( proj.FindI( "AFile.cpp" ) == nullptr );
         TEST_ASSERT( proj.Replace( "ZFile.cpp", "" ) == 2 );
@@ -791,7 +953,7 @@ void TestProjectGeneration::VCXProj_ProjectRelativePaths() const
 
     // Check vcxproj
     {
-        AStackString<> proj( pg.GenerateVCXProj( projectFileName, configs, Array< VSProjectFileType >() ) );
+        AStackString<> proj( pg.GenerateVCXProj( projectFileName, configs, Array< VSProjectFileType >(), Array< VSProjectImport >() ) );
         TEST_ASSERT( proj.Replace( "<CustomBuild Include=\"..\\ProjectSourceFiles\\File.cpp\" />", "" ) == 1 );
         TEST_ASSERT( proj.Replace( "<CustomBuild Include=\"..\\ProjectSourceFiles\\SubDir\\File.cpp\" />", "" ) == 1 );
         TEST_ASSERT( proj.FindI( "<CustomBuild " ) == nullptr );
@@ -862,7 +1024,7 @@ void TestProjectGeneration::VCXProj_ProjectRelativePaths2() const
 
     // Check vcxproj
     {
-        AStackString<> proj( pg.GenerateVCXProj( projectFileName, configs, Array< VSProjectFileType >() ) );
+        AStackString<> proj( pg.GenerateVCXProj( projectFileName, configs, Array< VSProjectFileType >(), Array< VSProjectImport >() ) );
         TEST_ASSERT( proj.Replace( "<CustomBuild Include=\"GeneratedCpp.cpp\" />", "" ) == 1 );
         TEST_ASSERT( proj.Replace( "<CustomBuild Include=\"SubDir\\GeneratedCpp.cpp\" />", "" ) == 1 );
         TEST_ASSERT( proj.FindI( "<CustomBuild " ) == nullptr );
@@ -903,7 +1065,7 @@ void TestProjectGeneration::Solution_Empty() const
     EnsureFileDoesNotExist( solution );
 
     // do build
-    TEST_ASSERT( fBuild.Build( AStackString<>( "EmptySolution" ) ) );
+    TEST_ASSERT( fBuild.Build( "EmptySolution" ) );
 
     //
     EnsureFileExists( solution );
@@ -932,7 +1094,7 @@ void TestProjectGeneration::Solution_SolutionRelativePaths() const
     EnsureFileDoesNotExist( solution );
 
     // do build
-    TEST_ASSERT( fBuild.Build( AStackString<>( "Solution" ) ) );
+    TEST_ASSERT( fBuild.Build( "Solution" ) );
 
     //
     EnsureFileExists( solution );
@@ -972,7 +1134,7 @@ void TestProjectGeneration::Solution_BuildAndDeploy_None() const
     EnsureFileDoesNotExist( solution );
 
     // do build
-    TEST_ASSERT( fBuild.Build( AStackString<>( "Solution" ) ) );
+    TEST_ASSERT( fBuild.Build( "Solution" ) );
 
     //
     EnsureFileExists( solution );
@@ -1006,7 +1168,7 @@ void TestProjectGeneration::Solution_BuildAndDeploy_Project() const
     EnsureFileDoesNotExist( solution );
 
     // do build
-    TEST_ASSERT( fBuild.Build( AStackString<>( "Solution" ) ) );
+    TEST_ASSERT( fBuild.Build( "Solution" ) );
 
     //
     EnsureFileExists( solution );
@@ -1052,7 +1214,7 @@ void TestProjectGeneration::Solution_BuildAndDeploy_PerSolutionConfig() const
     EnsureFileDoesNotExist( solution );
 
     // do build
-    TEST_ASSERT( fBuild.Build( AStackString<>( "Solution" ) ) );
+    TEST_ASSERT( fBuild.Build( "Solution" ) );
 
     //
     EnsureFileExists( solution );
@@ -1075,6 +1237,113 @@ void TestProjectGeneration::Solution_BuildAndDeploy_PerSolutionConfig() const
     TEST_ASSERT( solutionData.Find( ".Deploy." ) == nullptr );
 }
 
+// Solution_Items
+//------------------------------------------------------------------------------
+void TestProjectGeneration::Solution_Items() const
+{
+    const AStackString<> solution( "../tmp/Test/ProjectGeneration/Solution_Items/solution_with_items.sln" );
+
+    // Initialize
+    FBuildTestOptions options;
+    options.m_ConfigFile = "Tools/FBuild/FBuildTest/Data/TestProjectGeneration/Solution_Items/fbuild.bff";
+    FBuild fBuild( options );
+    TEST_ASSERT( fBuild.Initialize() );
+
+    // Delete old files from previous runs
+    EnsureFileDoesNotExist( solution );
+
+    // do build
+    TEST_ASSERT( fBuild.Build( "Solution_with_items" ) );
+
+    //
+    EnsureFileExists( solution );
+
+    // Check stats
+    //               Seen,  Built,  Type
+    CheckStatsNode(  1,     1,      Node::SLN_NODE );
+    CheckStatsNode(  1,     1,      Node::ALIAS_NODE );
+    CheckStatsTotal( 6,     6 );
+}
+
+
+// VSExternalProj_ExternalProject
+//------------------------------------------------------------------------------
+void TestProjectGeneration::VSExternalProj_ExternalProject() const
+{
+    AStackString<> solution( "../tmp/Test/ProjectGeneration/Solution_ExternalProject/External.sln" );
+
+    // Initialize
+    FBuildTestOptions options;
+    options.m_ConfigFile = "Tools/FBuild/FBuildTest/Data/TestProjectGeneration/Solution_ExternalProject/fbuild.bff";
+    options.m_ForceCleanBuild = true;
+    FBuild fBuild( options );
+    TEST_ASSERT( fBuild.Initialize() );
+
+    // Delete old files from previous runs
+    EnsureFileDoesNotExist( solution );
+
+    // do build
+    TEST_ASSERT( fBuild.Build( "ExternalProjectSolution" ) );
+
+    //
+    EnsureFileExists( solution );
+
+    // Check stats
+    //              Seen,   Built,  Type
+    CheckStatsNode( 1,      1,      Node::SLN_NODE );
+    CheckStatsNode( 1,      1,      Node::ALIAS_NODE );
+
+    // because of the external module, peek how many of them were actually processed, depending if using the module is
+    // enforced or not in the actual fbuild.bff 
+    const FBuildStats& stats = FBuild::Get().GetStats();
+    const FBuildStats::Stats& nodeStatsExternal = stats.GetStatsFor( Node::VSPROJEXTERNAL_NODE );
+    const size_t actualNumExtSeen = nodeStatsExternal.m_NumProcessed;
+    const size_t actualNumExtBuilt = nodeStatsExternal.m_NumBuilt;
+
+    CheckStatsTotal( 4 + actualNumExtSeen, 4 + actualNumExtBuilt );
+}
+
+// VSExternalProj_ExternalProjectWrongData
+//------------------------------------------------------------------------------
+void TestProjectGeneration::VSExternalProj_ExternalProjectWrongData() const
+{
+    // this test really needs to use the external module on a wrong project, in order to validate a failure scenario
+    // therefore it should only be ever run on windows, with properly installed VS
+
+    AStackString<> solution( "../tmp/Test/ProjectGeneration/Solution_ExternalProject/ExternalWrongData.sln" );
+
+    // Initialize
+    FBuildTestOptions options;
+    options.m_ConfigFile = "Tools/FBuild/FBuildTest/Data/TestProjectGeneration/Solution_ExternalProject/fbuild_WrongData.bff";
+    options.m_ForceCleanBuild = true;
+    FBuild fBuild( options );
+    TEST_ASSERT( fBuild.Initialize() );
+
+    // Delete old files from previous runs
+    EnsureFileDoesNotExist( solution );
+
+    // building will fail
+    TEST_ASSERT( fBuild.Build( "ExternalWrongDataProjectSolution" ) == false );
+
+    CheckStatsTotal( 5, 2 );
+}
+
+// VSExternalProj_ExternalProject_MissingProjectGUID
+//------------------------------------------------------------------------------
+void TestProjectGeneration::VSExternalProj_ExternalProject_MissingProjectGUID() const
+{
+    // Initialize
+    FBuildTestOptions options;
+    options.m_ConfigFile = "Tools/FBuild/FBuildTest/Data/TestProjectGeneration/Solution_ExternalProject/fbuild_MissingProjectGUID.bff";
+    options.m_ForceCleanBuild = true;
+    FBuild fBuild( options );
+    TEST_ASSERT( fBuild.Initialize() );
+
+    // building will fail
+    TEST_ASSERT( fBuild.Build( "ExternalProject_MissingProjectGUID" ) == false );
+    TEST_ASSERT( GetRecordedOutput().Find( "Failed to extract <ProjectGuid>" ) );
+}
+
 // XCode
 //------------------------------------------------------------------------------
 void TestProjectGeneration::XCode() const
@@ -1091,7 +1360,7 @@ void TestProjectGeneration::XCode() const
     EnsureFileDoesNotExist( project );
 
     // do build
-    TEST_ASSERT( fBuild.Build( AStackString<>( "XCodeProj" ) ) );
+    TEST_ASSERT( fBuild.Build( "XCodeProj" ) );
 
     // Check stats
     //               Seen,  Built,  Type

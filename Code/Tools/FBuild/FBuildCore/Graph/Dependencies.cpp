@@ -17,7 +17,7 @@
 //------------------------------------------------------------------------------
 void Dependencies::Save( IOStream & stream ) const
 {
-    size_t numDeps = GetSize();
+    const size_t numDeps = GetSize();
     stream.Write( (uint32_t)numDeps );
 
     Iter endIt = End();
@@ -26,11 +26,15 @@ void Dependencies::Save( IOStream & stream ) const
         const Dependency & dep = *it;
 
         // Nodes are saved by index to simplify deserialization
-        uint32_t index = dep.GetNode()->GetIndex();
+        const uint32_t index = dep.GetNode()->GetIndex();
         stream.Write( index );
 
+        // Save stamp
+        const uint64_t stamp = dep.GetNodeStamp();
+        stream.Write( stamp );
+
         // Save weak flag
-        bool isWeak = dep.IsWeak();
+        const bool isWeak = dep.IsWeak();
         stream.Write( isWeak );
     }
 }
@@ -61,6 +65,13 @@ bool Dependencies::Load( NodeGraph & nodeGraph, IOStream & stream )
         Node * node = nodeGraph.GetNodeByIndex( index );
         ASSERT( node );
 
+        // Read Stamp
+        uint64_t stamp;
+        if ( stream.Read( stamp ) == false )
+        {
+            return false;
+        }
+
         // Read weak flag
         bool isWeak( false );
         if ( stream.Read( isWeak ) == false )
@@ -69,7 +80,7 @@ bool Dependencies::Load( NodeGraph & nodeGraph, IOStream & stream )
         }
 
         // Recombine dependency info
-        Append( Dependency( node, isWeak ) );
+        EmplaceBack( node, stamp, isWeak );
     }
     return true;
 }

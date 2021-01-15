@@ -73,10 +73,10 @@ void CompilationDatabase::VisitNodes( const Dependencies & dependencies, Array< 
 {
     for ( const Dependency & dep : dependencies )
     {
-        Node * node = dep.GetNode();
+        const Node * node = dep.GetNode();
 
         // Skip already visited nodes
-        uint32_t nodeIndex = node->GetIndex();
+        const uint32_t nodeIndex = node->GetIndex();
         ASSERT( nodeIndex != INVALID_NODE_INDEX );
         if ( visited[ nodeIndex ] )
         {
@@ -180,9 +180,9 @@ void CompilationDatabase::HandleInputFile( const AString & inputFile, const AStr
         if ( found )
         {
             AStackString<> arg;
-            arg.Append( argument.Get(), found - argument.Get() );
+            arg.Append( argument.Get(), (size_t)( found - argument.Get() ) );
             arg.Append( inputFileEscaped );
-            arg.Append( found + 2, argument.GetEnd() - ( found + 2 ) );
+            arg.Append( found + 2, (size_t)( argument.GetEnd() - ( found + 2 ) ) );
             m_Output += ", \"";
             m_Output += arg;
             m_Output += "\"";
@@ -193,9 +193,9 @@ void CompilationDatabase::HandleInputFile( const AString & inputFile, const AStr
         if ( found )
         {
             AStackString<> arg;
-            arg.Append( argument.Get(), found - argument.Get() );
+            arg.Append( argument.Get(), (size_t)( found - argument.Get() ) );
             arg.Append( outputFileEscaped );
-            arg.Append( found + 2, argument.GetEnd() - ( found + 2 ) );
+            arg.Append( found + 2, (size_t)( argument.GetEnd() - ( found + 2 ) ) );
             m_Output += ", \"";
             m_Output += arg;
             m_Output += "\"";

@@ -4,24 +4,15 @@
 // Includes
 //------------------------------------------------------------------------------
 #include "ReflectionInfo.h"
-#include "Core/Containers/AutoPtr.h"
-#include "Core/FileIO/ConstMemoryStream.h"
-#include "Core/FileIO/FileIO.h"
-#include "Core/FileIO/FileStream.h"
-#include "Core/FileIO/MemoryStream.h"
+
+// Core
 #include "Core/Math/xxHash.h"
-#include "Core/Process/Process.h"
 #include "Core/Reflection/ReflectedProperty.h"
-#include "Core/Strings/AString.h"
 #include "Core/Strings/AStackString.h"
-#include "Core/Tracing/Tracing.h"
+#include "Core/Strings/AString.h"
 
 // System
 #include <memory.h>
-
-// Static Data
-//------------------------------------------------------------------------------
-/*static*/ ReflectionInfo * ReflectionInfo::s_FirstReflectionInfo( nullptr );
 
 // CONSTRUCTOR
 //------------------------------------------------------------------------------
@@ -41,10 +32,9 @@ ReflectionInfo::ReflectionInfo()
 //------------------------------------------------------------------------------
 ReflectionInfo::~ReflectionInfo()
 {
-    auto end = m_Properties.End();
-    for ( auto it = m_Properties.Begin(); it != end; ++it )
+    for ( ReflectedProperty * property : m_Properties )
     {
-        delete *it;
+        delete property;
     }
 
     const IMetaData * md = m_MetaDataChain;
@@ -147,15 +137,6 @@ GETSET_PROPERTY_ARRAY( AString )
 #undef GETSET_PROPERTY
 #undef GETSET_PROPERTY_ARRAY
 
-// BindReflection
-//------------------------------------------------------------------------------
-/*static*/ void ReflectionInfo::BindReflection( ReflectionInfo & reflectionInfo )
-{
-    ASSERT( reflectionInfo.m_Next == nullptr );
-    reflectionInfo.m_Next = s_FirstReflectionInfo;
-    s_FirstReflectionInfo = &reflectionInfo;
-}
-
 // SetTypeName
 //------------------------------------------------------------------------------
 void ReflectionInfo::SetTypeName( const char * typeName )
@@ -252,12 +233,11 @@ const ReflectedProperty * ReflectionInfo::FindProperty( const char * name ) cons
 //------------------------------------------------------------------------------
 const ReflectedProperty * ReflectionInfo::FindPropertyRecurse( uint32_t nameCRC ) const
 {
-    auto end = m_Properties.End();
-    for ( auto it = m_Properties.Begin(); it != end; ++it )
+    for ( const ReflectedProperty * property : m_Properties )
     {
-        if ( ( *it )->GetNameCRC() == nameCRC )
+        if ( property->GetNameCRC() == nameCRC )
         {
-            return *it;
+            return property;
         }
     }
     if ( m_SuperClass )
@@ -265,58 +245,6 @@ const ReflectedProperty * ReflectionInfo::FindPropertyRecurse( uint32_t nameCRC 
         return m_SuperClass->FindPropertyRecurse( nameCRC );
     }
     return nullptr;
-}
-
-// CreateObject
-//------------------------------------------------------------------------------
-/*static*/ Object * ReflectionInfo::CreateObject( const AString & objectType )
-{
-    const uint32_t objectTypeCRC = xxHash::Calc32( objectType );
-    const ReflectionInfo * ri = s_FirstReflectionInfo;
-    while ( ri )
-    {
-        if ( objectTypeCRC == ri->m_TypeNameCRC )
-        {
-            return ri->CreateObject();
-        }
-        ri = ri->m_Next;
-    }
-    return nullptr;
-}
-
-// CreateStruct
-//------------------------------------------------------------------------------
-/*static*/ Struct * ReflectionInfo::CreateStruct( const AString & structType )
-{
-    const uint32_t objectTypeCRC = xxHash::Calc32( structType );
-    const ReflectionInfo * ri = s_FirstReflectionInfo;
-    while ( ri )
-    {
-        if ( objectTypeCRC == ri->m_TypeNameCRC )
-        {
-            return ri->CreateStruct();
-        }
-        ri = ri->m_Next;
-    }
-    return nullptr;
-}
-
-// CreateObject
-//------------------------------------------------------------------------------
-Object * ReflectionInfo::CreateObject() const
-{
-    ASSERT( IsObject() );
-    ASSERT( !IsAbstract() );
-    return (Object *)Create();
-}
-
-// CreateStruct
-//------------------------------------------------------------------------------
-Struct * ReflectionInfo::CreateStruct() const
-{
-    ASSERT( IsStruct() );
-    ASSERT( !IsAbstract() );
-    return (Struct *)Create();
 }
 
 // SetArraySize
@@ -328,17 +256,9 @@ void ReflectionInfo::SetArraySize( void * array, size_t size ) const
     SetArraySizeV( array, size );
 }
 
-// Create
-//------------------------------------------------------------------------------
-/*virtual*/ void * ReflectionInfo::Create() const
-{
-    ASSERT( false ); // Should be implemented by derived class!
-    return nullptr;
-}
-
 // SetArraySizeV
 //------------------------------------------------------------------------------
-/*virtual*/ void ReflectionInfo::SetArraySizeV( void * UNUSED( array ), size_t UNUSED( size ) ) const
+/*virtual*/ void ReflectionInfo::SetArraySizeV( void * /*array*/, size_t /*size*/ ) const
 {
     ASSERT( false ); // Should be implemented by derived class!
 }

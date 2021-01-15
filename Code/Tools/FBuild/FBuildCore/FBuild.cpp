@@ -6,7 +6,6 @@
 #include "FBuild.h"
 
 #include "FLog.h"
-#include "BFF/BFFMacros.h"
 #include "BFF/BFFParser.h"
 #include "BFF/Functions/Function.h"
 #include "Cache/ICache.h"
@@ -33,6 +32,7 @@
 #include "Core/FileIO/MemoryStream.h"
 #include "Core/Math/xxHash.h"
 #include "Core/Mem/SmallBlockAllocator.h"
+#include "Core/Process/Atomic.h"
 #include "Core/Process/SystemMutex.h"
 #include "Core/Profile/Profile.h"
 #include "Core/Strings/AStackString.h"
@@ -75,8 +75,6 @@ FBuild::FBuild( const FBuildOptions & options )
                         _CRTDBG_LEAK_CHECK_DF );
     #endif
 
-    m_Macros = FNEW( BFFMacros() );
-
     // store all user provided options
     m_Options = options;
 
@@ -84,15 +82,15 @@ FBuild::FBuild( const FBuildOptions & options )
     VERIFY( FileIO::GetCurrentDir( m_OldWorkingDir ) );
 
     // poke options where required
-    FLog::SetShowInfo( m_Options.m_ShowInfo );
-    FLog::SetShowBuildCommands( m_Options.m_ShowBuildCommands );
+    FLog::SetShowVerbose( m_Options.m_ShowVerbose );
+    FLog::SetShowBuildReason( m_Options.m_ShowBuildReason );
     FLog::SetShowErrors( m_Options.m_ShowErrors );
     FLog::SetShowProgress( m_Options.m_ShowProgress );
     FLog::SetMonitorEnabled( m_Options.m_EnableMonitor );
 
     Function::Create();
 
-    NetworkStartupHelper::SetMasterShutdownFlag( &s_AbortBuild );
+    NetworkStartupHelper::SetMainShutdownFlag( &s_AbortBuild );
 }
 
 // DESTRUCTOR
@@ -103,7 +101,6 @@ FBuild::~FBuild()
 
     Function::Destroy();
 
-    FDELETE m_Macros;
     FDELETE m_DependencyGraph;
     FDELETE m_Client;
     FREE( m_EnvironmentString );
@@ -155,7 +152,7 @@ bool FBuild::Initialize( const char * nodeGraphDBFile )
             m_DependencyGraphFile += ".windows.fdb";
         #elif defined( __OSX__ )
             m_DependencyGraphFile += ".osx.fdb";
-        #elif defined( __LINUX )
+        #elif defined( __LINUX__ )
             m_DependencyGraphFile += ".linux.fdb";
         #endif
     }
@@ -185,7 +182,12 @@ bool FBuild::Initialize( const char * nodeGraphDBFile )
             m_Cache = FNEW( Cache() );
         }
 
-        if ( m_Cache->Init( settings->GetCachePath(), settings->GetCachePathMountPoint() ) == false )
+        if ( m_Cache->Init( settings->GetCachePath(),
+                            settings->GetCachePathMountPoint(),
+                            m_Options.m_UseCacheRead,
+                            m_Options.m_UseCacheWrite,
+                            m_Options.m_CacheVerbose,
+                            settings->GetCachePluginDLLConfig() ) == false )
         {
             m_Options.m_UseCacheRead = false;
             m_Options.m_UseCacheWrite = false;
@@ -195,6 +197,13 @@ bool FBuild::Initialize( const char * nodeGraphDBFile )
     }
 
     return true;
+}
+
+// Build
+//------------------------------------------------------------------------------
+bool FBuild::Build( const char* target )
+{
+    return Build( AStackString<>( target ) );
 }
 
 // Build
@@ -248,7 +257,7 @@ bool FBuild::GetTargets( const Array< AString > & targets, Dependencies & outDep
 
             return false;
         }
-        outDeps.Append( Dependency( node ) );
+        outDeps.EmplaceBack( node );
     }
 
     return true;
@@ -268,12 +277,12 @@ bool FBuild::Build( const Array< AString > & targets )
     proxy.m_StaticDependencies = deps;
 
     // build all targets in one sweep
-    bool result = Build( &proxy );
+    const bool result = Build( &proxy );
 
     // output per-target results
     for ( size_t i=0; i<targets.GetSize(); ++i )
     {
-        bool nodeResult = ( deps[ i ].GetNode()->GetState() == Node::UP_TO_DATE );
+        const bool nodeResult = ( deps[ i ].GetNode()->GetState() == Node::UP_TO_DATE );
         OUTPUT( "FBuild: %s: %s\n", nodeResult ? "OK" : "Error: BUILD FAILED", targets[ i ].Get() );
     }
 
@@ -288,9 +297,9 @@ bool FBuild::SaveDependencyGraph( const char * nodeGraphDBFile ) const
 
     PROFILE_FUNCTION
 
-    FLOG_INFO( "Saving DepGraph '%s'", nodeGraphDBFile );
+    FLOG_VERBOSE( "Saving DepGraph '%s'", nodeGraphDBFile );
 
-    Timer t;
+    const Timer t;
 
     // serialize into memory first
     MemoryStream memoryStream( 32 * 1024 * 1024, 8 * 1024 * 1024 );
@@ -337,7 +346,7 @@ bool FBuild::SaveDependencyGraph( const char * nodeGraphDBFile ) const
         return false;
     }
 
-    FLOG_INFO( "Saving DepGraph Complete in %2.3fs", (double)t.GetElapsed() );
+    FLOG_VERBOSE( "Saving DepGraph Complete in %2.3fs", (double)t.GetElapsed() );
     return true;
 }
 
@@ -354,8 +363,8 @@ bool FBuild::Build( Node * nodeToBuild )
 {
     ASSERT( nodeToBuild );
 
-    s_StopBuild = false; // allow multiple runs in same process
-    s_AbortBuild = false; // allow multiple runs in same process
+    AtomicStoreRelaxed( &s_StopBuild, false ); // allow multiple runs in same process
+    AtomicStoreRelaxed( &s_AbortBuild, false ); // allow multiple runs in same process
 
     // create worker threads
     m_JobQueue = FNEW( JobQueue( m_Options.m_NumWorkerThreads ) );
@@ -366,16 +375,12 @@ bool FBuild::Build( Node * nodeToBuild )
     {
         const SettingsNode * settings = m_DependencyGraph->GetSettings();
 
-        Array< AString > workers;
-        if ( settings->GetWorkerList().IsEmpty() )
+        // Worker list from Settings takes priority
+        Array< AString > workers( settings->GetWorkerList() );
+        if ( workers.IsEmpty() )
         {
-            // check for workers through brokerage
-            // TODO:C This could be moved out of the main code path
+            // check for workers through brokerage or environment
             m_WorkerBrokerage.FindWorkers( workers );
-        }
-        else
-        {
-            workers = settings->GetWorkerList();
         }
 
         if ( workers.IsEmpty() )
@@ -385,7 +390,7 @@ bool FBuild::Build( Node * nodeToBuild )
         }
         else
         {
-            OUTPUT( "Distributed Compilation : %u Workers in pool '%s'\n", (uint32_t)workers.GetSize(), m_WorkerBrokerage.GetBrokerageRoot().Get() );
+            OUTPUT( "Distributed Compilation : %u Workers in pool '%s'\n", (uint32_t)workers.GetSize(), m_WorkerBrokerage.GetBrokerageRootPaths().Get() );
             m_Client = FNEW( Client( workers, m_Options.m_DistributionPort, settings->GetWorkerConnectionLimit(), m_Options.m_DistVerbose ) );
         }
     }
@@ -423,10 +428,10 @@ bool FBuild::Build( Node * nodeToBuild )
             WorkerThread::Update();
         }
 
-        bool complete = ( nodeToBuild->GetState() == Node::UP_TO_DATE ) ||
-                        ( nodeToBuild->GetState() == Node::FAILED );
+        const bool complete = ( nodeToBuild->GetState() == Node::UP_TO_DATE ) ||
+                              ( nodeToBuild->GetState() == Node::FAILED );
 
-        if ( s_StopBuild || complete )
+        if ( AtomicLoadRelaxed( &s_StopBuild ) || complete )
         {
             if ( stopping == false )
             {
@@ -441,8 +446,8 @@ bool FBuild::Build( Node * nodeToBuild )
                 stopping = true;
                 if ( m_Options.m_FastCancel )
                 {
-                    // Notify the system that the master process has been killed and that it can kill its process.
-                    s_AbortBuild = true;
+                    // Notify the system that the main process has been killed and that it can kill its process.
+                    AtomicStoreRelaxed( &s_AbortBuild, true );
                 }
             }
         }
@@ -491,7 +496,7 @@ bool FBuild::Build( Node * nodeToBuild )
     }
 
     // TODO:C Move this into BuildStats
-    float timeTaken = m_Timer.GetElapsed();
+    const float timeTaken = m_Timer.GetElapsed();
     m_BuildStats.m_TotalBuildTime = timeTaken;
 
     m_BuildStats.OnBuildStop( nodeToBuild );
@@ -554,10 +559,16 @@ bool FBuild::ImportEnvironmentVar( const char * name, bool optional, AString & v
     }
 
     // import new variable name with its hash value
-    const EnvironmentVarAndHash var( name, hash );
-    m_ImportedEnvironmentVars.Append( var );
+    m_ImportedEnvironmentVars.EmplaceBack( name, hash );
 
     return true;
+}
+
+// AddFileExistsCheck
+//------------------------------------------------------------------------------
+bool FBuild::AddFileExistsCheck( const AString & fileName )
+{
+    return m_FileExistsInfo.CheckFile( fileName );
 }
 
 // GetLibEnvVar
@@ -581,11 +592,11 @@ void FBuild::GetLibEnvVar( AString & value ) const
 //------------------------------------------------------------------------------
 void FBuild::AbortBuild()
 {
-    s_StopBuild = true;
+    AtomicStoreRelaxed( &s_StopBuild, true );
     if ( FBuild::IsValid() && FBuild::Get().m_Options.m_FastCancel )
     {
-        // Notify the system that the master process has been killed and that it can kill its process.
-        s_AbortBuild = true;
+        // Notify the system that the main process has been killed and that it can kill its process.
+        AtomicStoreRelaxed( &s_AbortBuild, true );
     }
 }
 
@@ -597,6 +608,13 @@ void FBuild::AbortBuild()
     {
         AbortBuild();
     }
+}
+
+// GetStopBuild
+//------------------------------------------------------------------------------
+/*static*/ bool FBuild::GetStopBuild()
+{
+    return AtomicLoadRelaxed( &s_StopBuild );
 }
 
 // UpdateBuildStatus
@@ -616,9 +634,9 @@ void FBuild::UpdateBuildStatus( const Node * node )
     const float OUTPUT_FREQUENCY( 1.0f );
     const float CALC_FREQUENCY( 5.0f );
 
-    float timeNow = m_Timer.GetElapsed();
+    const float timeNow = m_Timer.GetElapsed();
 
-    bool doUpdate = ( ( timeNow - m_LastProgressOutputTime ) >= OUTPUT_FREQUENCY );
+    const bool doUpdate = ( ( timeNow - m_LastProgressOutputTime ) >= OUTPUT_FREQUENCY );
     if ( doUpdate == false )
     {
         return;
@@ -636,10 +654,10 @@ void FBuild::UpdateBuildStatus( const Node * node )
         m_LastProgressCalcTime = m_Timer.GetElapsed();
 
         // calculate percentage
-        float doneRatio = (float)( (double)bs.m_NodeTimeProgressms / (double)bs.m_NodeTimeTotalms );
+        const float doneRatio = (float)( (double)bs.m_NodeTimeProgressms / (double)bs.m_NodeTimeTotalms );
 
         // don't allow it to reach 100% (handles rounding inaccuracies)
-        float donePerc = Math::Min< float >( doneRatio * 100.0f, 99.9f );
+        const float donePerc = Math::Min< float >( doneRatio * 100.0f, 99.9f );
 
         // don't allow progress to go backwards
         m_SmoothedProgressTarget = Math::Max< float >( donePerc, m_SmoothedProgressTarget );
@@ -676,14 +694,15 @@ void FBuild::UpdateBuildStatus( const Node * node )
 
 // DisplayTargetList
 //------------------------------------------------------------------------------
-void FBuild::DisplayTargetList() const
+void FBuild::DisplayTargetList( bool showHidden ) const
 {
     OUTPUT( "FBuild: List of available targets\n" );
     const size_t totalNodes = m_DependencyGraph->GetNodeCount();
     for ( size_t i = 0; i < totalNodes; ++i )
     {
-        Node * node = m_DependencyGraph->GetNodeByIndex( i );
+        const Node * node = m_DependencyGraph->GetNodeByIndex( i );
         bool displayName = false;
+        bool hidden = node->IsHidden();
         switch ( node->GetType() )
         {
             case Node::PROXY_NODE:          ASSERT( false ); break;
@@ -693,23 +712,26 @@ void FBuild::DisplayTargetList() const
             case Node::FILE_NODE:           break;
             case Node::LIBRARY_NODE:        break;
             case Node::OBJECT_NODE:         break;
-            case Node::ALIAS_NODE:          displayName = true; break;
+            case Node::ALIAS_NODE:          displayName = true; hidden = node->IsHidden(); break;
             case Node::EXE_NODE:            break;
             case Node::CS_NODE:             break;
-            case Node::UNITY_NODE:          displayName = true; break;
+            case Node::UNITY_NODE:          displayName = true; hidden = node->IsHidden(); break;
             case Node::TEST_NODE:           break;
             case Node::COMPILER_NODE:       break;
             case Node::DLL_NODE:            break;
             case Node::VCXPROJECT_NODE:     break;
-            case Node::OBJECT_LIST_NODE:    displayName = true; break;
+            case Node::VSPROJEXTERNAL_NODE: break;
+            case Node::OBJECT_LIST_NODE:    displayName = true; hidden = node->IsHidden(); break;
             case Node::COPY_DIR_NODE:       break;
             case Node::SLN_NODE:            break;
             case Node::REMOVE_DIR_NODE:     break;
             case Node::XCODEPROJECT_NODE:   break;
             case Node::SETTINGS_NODE:       break;
+            case Node::TEXT_FILE_NODE:      displayName = true; hidden = node->IsHidden(); break;
+            case Node::LIST_DEPENDENCIES_NODE: break;
             case Node::NUM_NODE_TYPES:      ASSERT( false );                        break;
         }
-        if ( displayName )
+        if ( displayName && ( !hidden || showHidden ) )
         {
             OUTPUT( "\t%s\n", node->GetName().Get() );
         }
@@ -720,16 +742,21 @@ void FBuild::DisplayTargetList() const
 //------------------------------------------------------------------------------
 bool FBuild::DisplayDependencyDB( const Array< AString > & targets ) const
 {
-    // create a temporary node, not hooked into the DB
+    AString buffer( 10 * 1024 * 1024 );
+
+    // Get the nodes for the targets, or leave empty to display everything
     Dependencies deps;
-    if ( !GetTargets( targets, deps ) )
+    if ( targets.IsEmpty() == false )
     {
-        return false; // GetTargets will have emitted an error
+        if ( !GetTargets( targets, deps ) )
+        {
+            return false; // GetTargets will have emitted an error
+        }
     }
 
     OUTPUT( "FBuild: Dependency database\n" );
-
-    m_DependencyGraph->Display( deps );
+    m_DependencyGraph->SerializeToText( deps, buffer );
+    OUTPUT( "%s", buffer.Get() );
     return true;
 }
 
@@ -803,7 +830,7 @@ bool FBuild::CacheOutputInfo() const
         return m_Cache->OutputInfo( m_Options.m_ShowProgress );
     }
 
-    OUTPUT( "- Cache not configured" );
+    OUTPUT( "- Cache not configured\n" );
     return false;
 }
 
@@ -817,7 +844,7 @@ bool FBuild::CacheTrim() const
         return m_Cache->Trim( m_Options.m_ShowProgress, m_Options.m_CacheTrim );
     }
 
-    OUTPUT( "- Cache not configured" );
+    OUTPUT( "- Cache not configured\n" );
     return false;
 }
 
